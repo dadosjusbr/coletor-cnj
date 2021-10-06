@@ -8,6 +8,11 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
+const (
+	baseURL = "https://paineis.cnj.jus.br/QvAJAXZfc/opendoc.htm?document=qvw_l%2FPainelCNJ.qvw&host=QVS%40neodimio03&anonymous=true&sheet=shPORT63Relatorios"
+	timeout = 60 * time.Second
+)
+
 func main() {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.DisableGPU,
@@ -23,11 +28,11 @@ func main() {
 		chromedp.WithLogf(log.Printf),
 	)
 	defer cancel()
-	ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
+	ctx, cancel = context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var result string
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(`https://paineis.cnj.jus.br/QvAJAXZfc/opendoc.htm?document=qvw_l%2FPainelCNJ.qvw&host=QVS%40neodimio03&anonymous=true&sheet=shPORT63Relatorios`),
+		chromedp.Navigate(baseURL),
 		chromedp.WaitVisible(`//*[@title='Tribunal']`, chromedp.BySearch),
 
 		chromedp.Click(`//*[@title='Tribunal']//*[@title='Pesquisar']`, chromedp.NodeNotVisible),
