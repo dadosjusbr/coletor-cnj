@@ -21,7 +21,7 @@ const (
 func main() {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.DisableGPU,
-		chromedp.Flag("headless", false),
+		// chromedp.Flag("headless", false),
 	)
 	alctor, cancel := chromedp.NewExecAllocator(
 		context.Background(),
