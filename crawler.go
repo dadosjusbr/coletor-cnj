@@ -1,9 +1,12 @@
 package main
-
 import (
 	"context"
 	"log"
 	"time"
+	"fmt"
+	"io/ioutil"
+    "os"
+
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 	"github.com/chromedp/cdproto/browser"
@@ -11,7 +14,7 @@ import (
 
 const (
 	baseURL = "https://paineis.cnj.jus.br/QvAJAXZfc/opendoc.htm?document=qvw_l%2FPainelCNJ.qvw&host=QVS%40neodimio03&anonymous=true&sheet=shPORT63Relatorios"
-	timeout = 60 * time.Second
+	timeout = 70 * time.Second
 	path_root = "/html/body/div[2]/input"
 	month = "01"
 	year = "2020"
@@ -21,7 +24,7 @@ const (
 func main() {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.DisableGPU,
-		// chromedp.Flag("headless", false),
+		chromedp.Flag("headless", false),
 	)
 	alctor, cancel := chromedp.NewExecAllocator(
 		context.Background(),
@@ -76,5 +79,28 @@ func main() {
 		log.Println(err)
 		return
 	}
+
+	// Identifica qual foi o ultimo arquivo
+    dir := "output/"
+    files, _ := ioutil.ReadDir(dir)
+    var newestFile string
+    var newestTime int64 = 0
+    for _, f := range files {
+        fi, err := os.Stat(dir + f.Name())
+        if err != nil {
+            fmt.Println(err)
+        }
+        currTime := fi.ModTime().Unix()
+        if currTime > newestTime {
+            newestTime = currTime
+            newestFile = f.Name()
+        }
+    }
+	// Renomeia o ultimo arquivo
+	e := os.Rename("output/" + newestFile, "output/"+court+"-"+year+"-"+month+".xslx")
+    if e != nil {
+        log.Fatal(e)
+    }
+
 	log.Printf("result %q", result)
 }
