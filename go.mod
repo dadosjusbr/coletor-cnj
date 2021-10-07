@@ -1,11 +1,13 @@
-module crawler.go
+module coletor-cnj-cdp
 
 go 1.17
 
-require github.com/chromedp/chromedp v0.7.4
+require (
+	github.com/chromedp/cdproto v0.0.0-20211002082225-0242b9dca9f4
+	github.com/chromedp/chromedp v0.7.4
+)
 
 require (
-	github.com/chromedp/cdproto v0.0.0-20210713064928-7d28b402946a // indirect
 	github.com/chromedp/sysutil v1.0.0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
