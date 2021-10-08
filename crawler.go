@@ -13,15 +13,6 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// TODO(marcos): Estas constantes abaixo devem ser recebidas via
-// variáveis de ambiente. São os parâmetros do coletor,
-const (
-	month  = "01"
-	year   = "2020"
-	court  = "tjrj"
-	output = "./output"
-)
-
 const (
 	timeout             = 5 * time.Minute
 	tempoEsperaDownload = 15 * time.Second
@@ -32,7 +23,9 @@ const (
 	verbasXPATH           = "/html/body/div[5]/div/div[28]/div[2]/table/tbody/tr/td"
 )
 
-func main() {
+func crawl(court, year, month, output string) ([]string, error) {
+	// Pegar variáveis de ambiente
+
 	// Chromedp setup.
 	log.SetOutput(os.Stderr) // Enviando logs para o stderr para não afetar a execução do coletor.
 
@@ -40,6 +33,8 @@ func main() {
 		context.Background(),
 		append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.Flag("headless", true), // mude para false para executar com navegador visível.
+			chromedp.NoSandbox,
+			chromedp.DisableGPU,
 		)...,
 	)
 	defer allocCancel()
@@ -54,13 +49,16 @@ func main() {
 	defer cancel()
 
 	log.Printf("Realizando seleção (%s/%s/%s)...", court, month, year)
-	if err := selectionaOrgaoMesAno(ctx, "./output"); err != nil {
+	if err := selectionaOrgaoMesAno(ctx, court, year, month, output); err != nil {
 		log.Fatalf("Erro no setup:%v", err)
 	}
 	log.Printf("Seleção realizada com sucesso!\n")
 
+	// NOTA IMPORTANTE: os prefixos dos nomes dos arquivos tem que ser igual
+	// ao esperado no parser CNJ.
+
 	// O contra cheque é a aba padrão, por isso não precisa haver clique.
-	cqFname := fmt.Sprintf("contracheque-%s-%s-%s.xlsx", court, year, month)
+	cqFname := filepath.Join(output, fmt.Sprintf("contracheque-%s-%s-%s.xlsx", court, year, month))
 	log.Printf("Fazendo download do contracheque (%s)...", cqFname)
 	if err := exportaExcel(ctx, output, cqFname); err != nil {
 		log.Fatalf("Erro fazendo download do contracheque: %v", err)
@@ -68,7 +66,7 @@ func main() {
 	log.Printf("Download realizado com sucesso!\n")
 
 	// Direitos pessoais
-	dpFname := fmt.Sprintf("direitos-pessoais-%s-%s-%s.xlsx", court, year, month)
+	dpFname := filepath.Join(output, fmt.Sprintf("direitos-pessoais-%s-%s-%s.xlsx", court, year, month))
 	log.Printf("Fazendo download dos direitos pessoais (%s)...", dpFname)
 	if err := clicaAba(ctx, direitosPessoaisXPATH); err != nil {
 		log.Fatalf("Erro clicando na aba de direitos pessoais: %v", err)
@@ -79,7 +77,7 @@ func main() {
 	log.Printf("Download realizado com sucesso!\n")
 
 	// // Indenizações
-	iFname := fmt.Sprintf("indenizacoes-%s-%s-%s.xlsx", court, year, month)
+	iFname := filepath.Join(output, fmt.Sprintf("indenizacoes-%s-%s-%s.xlsx", court, year, month))
 	log.Printf("Fazendo download das indenizações (%s)...", iFname)
 	if err := clicaAba(ctx, indenizacoesXPATH); err != nil {
 		log.Fatalf("Erro clicando na aba de indenizações: %v", err)
@@ -90,18 +88,21 @@ func main() {
 	log.Printf("Download realizado com sucesso!\n")
 
 	// Verbas
-	vFname := fmt.Sprintf("verbas-%s-%s-%s.xlsx", court, year, month)
-	log.Printf("Fazendo download das verbas (%s)...", vFname)
+	deFname := filepath.Join(output, fmt.Sprintf("direitos-eventuais-%s-%s-%s.xlsx", court, year, month))
+	log.Printf("Fazendo download das verbas (%s)...", deFname)
 	if err := clicaAba(ctx, verbasXPATH); err != nil {
-		log.Fatalf("Erro clicando na aba de indenizações: %v", err)
+		log.Fatalf("Erro clicando na aba de direitos eventuais: %v", err)
 	}
-	if err := exportaExcel(ctx, output, vFname); err != nil {
-		log.Fatalf("Erro fazendo download dos indenizações: %v", err)
+	if err := exportaExcel(ctx, output, deFname); err != nil {
+		log.Fatalf("Erro fazendo download dos direitos eventuais: %v", err)
 	}
-	log.Printf("Download das verbas realizado com sucesso!\n")
+	log.Printf("Download das direitos eventuais realizado com sucesso!\n")
+
+	// Retorna caminhos completos dos arquivos baixados.
+	return []string{cqFname, dpFname, deFname, iFname}, nil
 }
 
-func selectionaOrgaoMesAno(ctx context.Context, output string) error {
+func selectionaOrgaoMesAno(ctx context.Context, court, year, month, output string) error {
 	const (
 		pathRoot = "/html/body/div[2]/input"
 		baseURL  = "https://paineis.cnj.jus.br/QvAJAXZfc/opendoc.htm?document=qvw_l%2FPainelCNJ.qvw&host=QVS%40neodimio03&anonymous=true&sheet=shPORT63Relatorios"
@@ -146,17 +147,16 @@ func exportaExcel(ctx context.Context, output, fName string) error {
 		chromedp.Sleep(tempoAcao),
 	)
 	if err != nil {
-		return fmt.Errorf("Erro clicando no botão de download: %v\n", err)
+		return fmt.Errorf("erro clicando no botão de download: %v", err)
 	}
 
 	time.Sleep(tempoEsperaDownload)
 
-	p := filepath.Join(output, fName)
-	if err := nomeiaDownload(output, p); err != nil {
-		return fmt.Errorf("Erro renomeando arquivo (%s): %v\n", p, err)
+	if err := nomeiaDownload(output, fName); err != nil {
+		return fmt.Errorf("erro renomeando arquivo (%s): %v", fName, err)
 	}
-	if _, err := os.Stat(p); os.IsNotExist(err) {
-		return fmt.Errorf("Download do arquivo de %s não realizado\n", p)
+	if _, err := os.Stat(fName); os.IsNotExist(err) {
+		return fmt.Errorf("download do arquivo de %s não realizado", fName)
 	}
 	return nil
 }
@@ -176,7 +176,7 @@ func nomeiaDownload(output, fName string) error {
 	// Identifica qual foi o ultimo arquivo
 	files, err := os.ReadDir(output)
 	if err != nil {
-		return fmt.Errorf("Erro lendo diretório %s: %v", output, err)
+		return fmt.Errorf("erro lendo diretório %s: %v", output, err)
 	}
 	var newestFPath string
 	var newestTime int64 = 0
@@ -184,7 +184,7 @@ func nomeiaDownload(output, fName string) error {
 		fPath := filepath.Join(output, f.Name())
 		fi, err := os.Stat(fPath)
 		if err != nil {
-			return fmt.Errorf("Erro obtendo informações sobre arquivo %s: %v", fPath, err)
+			return fmt.Errorf("erro obtendo informações sobre arquivo %s: %v", fPath, err)
 		}
 		currTime := fi.ModTime().Unix()
 		if currTime > newestTime {
@@ -194,7 +194,7 @@ func nomeiaDownload(output, fName string) error {
 	}
 	// Renomeia o ultimo arquivo modificado.
 	if err := os.Rename(newestFPath, fName); err != nil {
-		return fmt.Errorf("Erro renomeando último arquivo modificado (%s)->(%s): %v", newestFPath, fName, err)
+		return fmt.Errorf("erro renomeando último arquivo modificado (%s)->(%s): %v", newestFPath, fName, err)
 	}
 	return nil
 }
