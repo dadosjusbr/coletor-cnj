@@ -1,4 +1,4 @@
-module coletor-cnj-cdp
+module coletor-cnj
 
 go 1.17
 
