@@ -21,6 +21,7 @@ const (
 	direitosPessoaisXPATH = "/html/body/div[5]/div/div[31]/div[2]/table/tbody/tr/td"
 	indenizacoesXPATH     = "/html/body/div[5]/div/div[25]/div[2]/table/tbody/tr/td"
 	verbasXPATH           = "/html/body/div[5]/div/div[28]/div[2]/table/tbody/tr/td"
+	controleXPATH		  = "/html/body/div[5]/div/div[52]/div[2]/table/tbody/tr/td"
 )
 
 func crawl(court, year, month, output string) ([]string, error) {
@@ -98,8 +99,19 @@ func crawl(court, year, month, output string) ([]string, error) {
 	}
 	log.Printf("Download das direitos eventuais realizado com sucesso!\n")
 
+	// Planilha de controle
+	ceFname := filepath.Join(output, fmt.Sprintf("controle-de-arquivos-%s-%s-%s.xlsx", court, year, month))
+	log.Printf("Fazendo download das controle de arquivos (%s)...", ceFname)
+	if err := clicaAba(ctx, controleXPATH); err != nil {
+		log.Fatalf("Erro clicando na aba de controle de arquivos: %v", err)
+	}
+	if err := exportaExcel(ctx, output, ceFname); err != nil {
+		log.Fatalf("Erro fazendo download docontrole de arquivos: %v", err)
+	}
+	log.Printf("Download do controle de arquivos realizado com sucesso!\n")
+
 	// Retorna caminhos completos dos arquivos baixados.
-	return []string{cqFname, dpFname, deFname, iFname}, nil
+	return []string{cqFname, dpFname, deFname, iFname, ceFname}, nil
 }
 
 func selectionaOrgaoMesAno(ctx context.Context, court, year, month, output string) error {
