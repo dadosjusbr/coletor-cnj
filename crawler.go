@@ -21,7 +21,7 @@ const (
 	direitosPessoaisXPATH = "/html/body/div[5]/div/div[31]/div[2]/table/tbody/tr/td"
 	indenizacoesXPATH     = "/html/body/div[5]/div/div[25]/div[2]/table/tbody/tr/td"
 	verbasXPATH           = "/html/body/div[5]/div/div[28]/div[2]/table/tbody/tr/td"
-	controleXPATH		  = "/html/body/div[5]/div/div[52]/div[2]/table/tbody/tr/td"
+	controleXPATH         = "/html/body/div[5]/div/div[52]/div[2]/table/tbody/tr/td"
 )
 
 func crawl(court, year, month, output string) ([]string, error) {
