@@ -14,17 +14,23 @@ import (
 )
 
 const (
-	timeout             = 5 * time.Minute
-	tempoEsperaDownload = 15 * time.Second
-	tempoAcao           = 5 * time.Second
-
 	direitosPessoaisXPATH = "/html/body/div[5]/div/div[31]/div[2]/table/tbody/tr/td"
 	indenizacoesXPATH     = "/html/body/div[5]/div/div[25]/div[2]/table/tbody/tr/td"
 	verbasXPATH           = "/html/body/div[5]/div/div[28]/div[2]/table/tbody/tr/td"
 	controleXPATH         = "/html/body/div[5]/div/div[52]/div[2]/table/tbody/tr/td"
 )
 
-func crawl(court, year, month, output string) ([]string, error) {
+type crawler struct {
+	downloadTimeout   time.Duration
+	collectionTimeout time.Duration
+	timeBetweenSteps  time.Duration
+	court             string
+	year              string
+	month             string
+	output            string
+}
+
+func (c crawler) crawl() ([]string, error) {
 	// Pegar variáveis de ambiente
 
 	// Chromedp setup.
@@ -46,11 +52,11 @@ func crawl(court, year, month, output string) ([]string, error) {
 	)
 	defer cancel()
 
-	ctx, cancel = context.WithTimeout(ctx, timeout)
+	ctx, cancel = context.WithTimeout(ctx, c.collectionTimeout)
 	defer cancel()
 
-	log.Printf("Realizando seleção (%s/%s/%s)...", court, month, year)
-	if err := selectionaOrgaoMesAno(ctx, court, year, month, output); err != nil {
+	log.Printf("Realizando seleção (%s/%s/%s)...", c.court, c.month, c.year)
+	if err := c.selectionaOrgaoMesAno(ctx); err != nil {
 		log.Fatalf("Erro no setup:%v", err)
 	}
 	log.Printf("Seleção realizada com sucesso!\n")
@@ -59,53 +65,53 @@ func crawl(court, year, month, output string) ([]string, error) {
 	// ao esperado no parser CNJ.
 
 	// O contra cheque é a aba padrão, por isso não precisa haver clique.
-	cqFname := filepath.Join(output, fmt.Sprintf("contracheque-%s-%s-%s.xlsx", court, year, month))
+	cqFname := c.downloadFilePath("contracheque")
 	log.Printf("Fazendo download do contracheque (%s)...", cqFname)
-	if err := exportaExcel(ctx, output, cqFname); err != nil {
+	if err := c.exportaExcel(ctx, cqFname); err != nil {
 		log.Fatalf("Erro fazendo download do contracheque: %v", err)
 	}
 	log.Printf("Download realizado com sucesso!\n")
 
 	// Direitos pessoais
-	dpFname := filepath.Join(output, fmt.Sprintf("direitos-pessoais-%s-%s-%s.xlsx", court, year, month))
+	dpFname := c.downloadFilePath("direitos-pessoais")
 	log.Printf("Fazendo download dos direitos pessoais (%s)...", dpFname)
-	if err := clicaAba(ctx, direitosPessoaisXPATH); err != nil {
+	if err := c.clicaAba(ctx, direitosPessoaisXPATH); err != nil {
 		log.Fatalf("Erro clicando na aba de direitos pessoais: %v", err)
 	}
-	if err := exportaExcel(ctx, output, dpFname); err != nil {
+	if err := c.exportaExcel(ctx, dpFname); err != nil {
 		log.Fatalf("Erro fazendo download dos direitos pessoais: %v", err)
 	}
 	log.Printf("Download realizado com sucesso!\n")
 
 	// // Indenizações
-	iFname := filepath.Join(output, fmt.Sprintf("indenizacoes-%s-%s-%s.xlsx", court, year, month))
+	iFname := c.downloadFilePath("indenizacoes")
 	log.Printf("Fazendo download das indenizações (%s)...", iFname)
-	if err := clicaAba(ctx, indenizacoesXPATH); err != nil {
+	if err := c.clicaAba(ctx, indenizacoesXPATH); err != nil {
 		log.Fatalf("Erro clicando na aba de indenizações: %v", err)
 	}
-	if err := exportaExcel(ctx, output, iFname); err != nil {
+	if err := c.exportaExcel(ctx, iFname); err != nil {
 		log.Fatalf("Erro fazendo download dos indenizações: %v", err)
 	}
 	log.Printf("Download realizado com sucesso!\n")
 
 	// Verbas
-	deFname := filepath.Join(output, fmt.Sprintf("direitos-eventuais-%s-%s-%s.xlsx", court, year, month))
+	deFname := c.downloadFilePath("direitos-eventuais")
 	log.Printf("Fazendo download das verbas (%s)...", deFname)
-	if err := clicaAba(ctx, verbasXPATH); err != nil {
+	if err := c.clicaAba(ctx, verbasXPATH); err != nil {
 		log.Fatalf("Erro clicando na aba de direitos eventuais: %v", err)
 	}
-	if err := exportaExcel(ctx, output, deFname); err != nil {
+	if err := c.exportaExcel(ctx, deFname); err != nil {
 		log.Fatalf("Erro fazendo download dos direitos eventuais: %v", err)
 	}
 	log.Printf("Download das direitos eventuais realizado com sucesso!\n")
 
 	// Planilha de controle
-	ceFname := filepath.Join(output, fmt.Sprintf("controle-de-arquivos-%s-%s-%s.xlsx", court, year, month))
+	ceFname := c.downloadFilePath("controle-de-arquivos")
 	log.Printf("Fazendo download das controle de arquivos (%s)...", ceFname)
-	if err := clicaAba(ctx, controleXPATH); err != nil {
+	if err := c.clicaAba(ctx, controleXPATH); err != nil {
 		log.Fatalf("Erro clicando na aba de controle de arquivos: %v", err)
 	}
-	if err := exportaExcel(ctx, output, ceFname); err != nil {
+	if err := c.exportaExcel(ctx, ceFname); err != nil {
 		log.Fatalf("Erro fazendo download docontrole de arquivos: %v", err)
 	}
 	log.Printf("Download do controle de arquivos realizado com sucesso!\n")
@@ -114,7 +120,11 @@ func crawl(court, year, month, output string) ([]string, error) {
 	return []string{cqFname, dpFname, deFname, iFname, ceFname}, nil
 }
 
-func selectionaOrgaoMesAno(ctx context.Context, court, year, month, output string) error {
+func (c crawler) downloadFilePath(prefix string) string {
+	return filepath.Join(c.output, fmt.Sprintf("%s-%s-%s-%s.xlsx", prefix, c.court, c.year, c.month))
+}
+
+func (c crawler) selectionaOrgaoMesAno(ctx context.Context) error {
 	const (
 		pathRoot = "/html/body/div[2]/input"
 		baseURL  = "https://paineis.cnj.jus.br/QvAJAXZfc/opendoc.htm?document=qvw_l%2FPainelCNJ.qvw&host=QVS%40neodimio03&anonymous=true&sheet=shPORT63Relatorios"
@@ -122,49 +132,49 @@ func selectionaOrgaoMesAno(ctx context.Context, court, year, month, output strin
 	return chromedp.Run(ctx,
 		chromedp.Navigate(baseURL),
 		chromedp.WaitVisible(`//*[@title='Tribunal']`, chromedp.BySearch),
-		chromedp.Sleep(tempoAcao),
+		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Seleciona o orgão
 		chromedp.Click(`//*[@title='Tribunal']//*[@title='Pesquisar']`, chromedp.BySearch, chromedp.NodeReady),
 		chromedp.WaitVisible(pathRoot),
-		chromedp.SetValue(pathRoot, court),
+		chromedp.SetValue(pathRoot, c.court),
 		chromedp.SendKeys(pathRoot, kb.Enter, chromedp.NodeSelected),
-		chromedp.Sleep(tempoAcao),
+		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Seleciona o ano
 		chromedp.Click(`//*[@title='Ano']//*[@title='Pesquisar']`, chromedp.BySearch, chromedp.NodeVisible),
 		chromedp.WaitVisible(pathRoot),
-		chromedp.SetValue(pathRoot, year),
+		chromedp.SetValue(pathRoot, c.year),
 		chromedp.SendKeys(pathRoot, kb.Enter),
-		chromedp.Sleep(tempoAcao),
+		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Seleciona o mes
 		chromedp.Click(`//*[@title='Mês Referencia']//*[@title='Pesquisar']`, chromedp.BySearch, chromedp.NodeVisible),
 		chromedp.WaitVisible(pathRoot),
-		chromedp.SetValue(pathRoot, month),
+		chromedp.SetValue(pathRoot, c.month),
 		chromedp.SendKeys(pathRoot, kb.Enter),
-		chromedp.Sleep(tempoAcao),
+		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Altera o diretório de download
 		browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllowAndName).
-			WithDownloadPath(output).
+			WithDownloadPath(c.output).
 			WithEventsEnabled(true),
 	)
 }
 
 // exportaExcel clica no botão correto para exportar para excel, espera um tempo para download renomeia o arquivo.
-func exportaExcel(ctx context.Context, output, fName string) error {
+func (c crawler) exportaExcel(ctx context.Context, fName string) error {
 	err := chromedp.Run(ctx,
 		chromedp.Click(`//*[@title='Enviar para Excel']`, chromedp.BySearch, chromedp.NodeVisible),
-		chromedp.Sleep(tempoAcao),
+		chromedp.Sleep(c.timeBetweenSteps),
 	)
 	if err != nil {
 		return fmt.Errorf("erro clicando no botão de download: %v", err)
 	}
 
-	time.Sleep(tempoEsperaDownload)
+	time.Sleep(c.downloadTimeout)
 
-	if err := nomeiaDownload(output, fName); err != nil {
+	if err := nomeiaDownload(c.output, fName); err != nil {
 		return fmt.Errorf("erro renomeando arquivo (%s): %v", fName, err)
 	}
 	if _, err := os.Stat(fName); os.IsNotExist(err) {
@@ -175,10 +185,10 @@ func exportaExcel(ctx context.Context, output, fName string) error {
 
 // clicaAba clica na aba referenciada pelo XPATH passado como parâmetro.
 // Também espera até o título Tribunal estar visível.
-func clicaAba(ctx context.Context, xpath string) error {
+func (c crawler) clicaAba(ctx context.Context, xpath string) error {
 	return chromedp.Run(ctx,
 		chromedp.Click(xpath),
-		chromedp.Sleep(tempoAcao),
+		chromedp.Sleep(c.timeBetweenSteps),
 	)
 }
 
