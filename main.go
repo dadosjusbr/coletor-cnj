@@ -47,7 +47,7 @@ func main() {
 	downloadTimeout := defaultFileDownloadTimeout
 	if os.Getenv("DOWNLOAD_TIMEOUT") != "" {
 		var err error
-		downloadTimeout, err = time.ParseDuration("DOWNLOAD_TIMEOUT")
+		downloadTimeout, err = time.ParseDuration(os.Getenv("DOWNLOAD_TIMEOUT"))
 		if err != nil {
 			log.Fatalf("Invalid DOWNLOAD_TIMEOUT (\"%s\"): %q", os.Getenv("DOWNLOAD_TIMEOUT"), err)
 		}
@@ -56,7 +56,7 @@ func main() {
 	generalTimeout := defaultGeneralTimeout
 	if os.Getenv("GENERAL_TIMEOUT") != "" {
 		var err error
-		generalTimeout, err = time.ParseDuration("GENERAL_TIMEOUT")
+		generalTimeout, err = time.ParseDuration(os.Getenv("GENERAL_TIMEOUT"))
 		if err != nil {
 			log.Fatalf("Invalid GENERAL_TIMEOUT (\"%s\"): %q", os.Getenv("GENERAL_TIMEOUT"), err)
 		}
@@ -65,7 +65,7 @@ func main() {
 	timeBetweenSteps := defaulTimeBetweenSteps
 	if os.Getenv("TIME_BETWEEN_STEPS") != "" {
 		var err error
-		timeBetweenSteps, err = time.ParseDuration("TIME_BETWEEN_STEPS")
+		timeBetweenSteps, err = time.ParseDuration(os.Getenv("TIME_BETWEEN_STEPS"))
 		if err != nil {
 			log.Fatalf("Invalid TIME_BETWEEN_STEPS (\"%s\"): %q", os.Getenv("TIME_BETWEEN_STEPS"), err)
 		}
