@@ -121,7 +121,7 @@ func (c crawler) crawl() ([]string, error) {
 }
 
 func (c crawler) downloadFilePath(prefix string) string {
-	return filepath.Join(c.output, fmt.Sprintf("%s-%s-%s-%s.xlsx", prefix, c.court, c.year, c.month))
+	return filepath.Join(c.output, fmt.Sprintf("%s_%s_%s_%s.xlsx", prefix, c.court, c.year, c.month))
 }
 
 func (c crawler) selectionaOrgaoMesAno(ctx context.Context) error {
