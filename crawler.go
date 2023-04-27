@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/browser"
@@ -58,7 +59,7 @@ func (c crawler) crawl() ([]string, error) {
 
 	log.Printf("Realizando seleção (%s/%s/%s)...", c.court, c.month, c.year)
 	if err := c.selectionaOrgaoMesAno(ctx); err != nil {
-		status.ExitFromError(err)
+		verificaErro(err)
 	}
 	log.Printf("Seleção realizada com sucesso!\n")
 
@@ -220,4 +221,15 @@ func nomeiaDownload(output, fName string) error {
 		return status.NewError(status.DataUnavailable, fmt.Errorf("Sem planilhas baixadas."))
 	}
 	return nil
+}
+
+func verificaErro(err error) {
+	// Verificamos se o erro é de conexão ou 'context deadline exceeded',
+	// caso contrário, será retornado status Unknown (6)
+	if strings.Contains(err.Error(), "ERR_CONNECTION_CLOSED") || strings.Contains(err.Error(), "ERR_CONNECTION_RESET") {
+		err = status.NewError(status.ConnectionError, err)
+	} else if strings.Contains(err.Error(), "context deadline exceeded") {
+		err = status.NewError(status.DeadlineExceeded, err)
+	}
+	status.ExitFromError(err)
 }

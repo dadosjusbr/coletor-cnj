@@ -11,6 +11,8 @@ github.com/chromedp/sysutil v1.0.0 h1:+ZxhTpfpZlmchB58ih/LBHX52ky7w2VhQVKQMucy3I
 github.com/chromedp/sysutil v1.0.0/go.mod h1:kgWmDdq8fTzXYcKIBqIYvRRTnYb9aNS9moAV0xufSww=
 github.com/dadosjusbr/status v0.0.0-20230302185317-178e72e48028 h1:r8Qx9E7qAIE03pi5KegcKcrblGmmDVcVjBqK9xfDxJo=
 github.com/dadosjusbr/status v0.0.0-20230302185317-178e72e48028/go.mod h1:7M8ds2L3u+rHuiP+IImNTx7bSlIUz6hXzW0ZTBOeHzw=
+github.com/dadosjusbr/status v0.0.0-20230427172550-94965326182f h1:5zGu7ibrD4ax+pINUfY3jbBxXPLOb6tCUJoTgqEG1+0=
+github.com/dadosjusbr/status v0.0.0-20230427172550-94965326182f/go.mod h1:7M8ds2L3u+rHuiP+IImNTx7bSlIUz6hXzW0ZTBOeHzw=
 github.com/gobwas/httphead v0.1.0 h1:exrUm0f4YX0L7EBwZHuCF4GDp8aJfVeBrlLQrs6NqWU=
 github.com/gobwas/httphead v0.1.0/go.mod h1:O/RXo79gxV8G+RqlR/otEwx4Q36zl9rqC5u12GKvMCM=
 github.com/gobwas/pool v0.2.1 h1:xfeeEhW7pwmX8nuLVlqbzVc7udMDrwetjEv+TZIz1og=
