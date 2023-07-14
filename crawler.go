@@ -13,13 +13,15 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 	"github.com/dadosjusbr/status"
+	"github.com/xuri/excelize/v2"
 )
 
 const (
 	direitosPessoaisXPATH = "/html/body/div[5]/div/div[31]/div[2]/table/tbody/tr/td"
 	indenizacoesXPATH     = "/html/body/div[5]/div/div[25]/div[2]/table/tbody/tr/td"
 	verbasXPATH           = "/html/body/div[5]/div/div[28]/div[2]/table/tbody/tr/td"
-	controleXPATH         = "/html/body/div[5]/div/div[52]/div[2]/table/tbody/tr/td"
+	controleXPATH         = "/html/body/div[5]/div/div[55]/div[2]/table/tbody/tr/td"
+	contrachequeXPATH     = "/html/body/div[5]/div/div[49]/div[2]/table/tbody/tr/td"
 )
 
 type crawler struct {
@@ -66,9 +68,28 @@ func (c crawler) crawl() ([]string, error) {
 	// NOTA IMPORTANTE: os prefixos dos nomes dos arquivos tem que ser igual
 	// ao esperado no parser CNJ.
 
-	// O contra cheque é a aba padrão, por isso não precisa haver clique.
+	// Planilha de controle
+	ceFname := c.downloadFilePath("controle-de-arquivos")
+	log.Printf("Fazendo download do controle de arquivos (%s)...", ceFname)
+	if err := c.clicaAba(ctx, controleXPATH); err != nil {
+		status.ExitFromError(err)
+	}
+	if err := c.exportaExcel(ctx, ceFname); err != nil {
+		status.ExitFromError(err)
+	}
+	log.Printf("Download do controle de arquivos realizado com sucesso!\n")
+
+	// Verificando se tem dados
+	if err := validate(c); err != nil {
+		status.ExitFromError(err)
+	}
+
+	// Contracheque
 	cqFname := c.downloadFilePath("contracheque")
 	log.Printf("Fazendo download do contracheque (%s)...", cqFname)
+	if err := c.clicaAba(ctx, contrachequeXPATH); err != nil {
+		status.ExitFromError(err)
+	}
 	if err := c.exportaExcel(ctx, cqFname); err != nil {
 		status.ExitFromError(err)
 	}
@@ -98,25 +119,14 @@ func (c crawler) crawl() ([]string, error) {
 
 	// Verbas
 	deFname := c.downloadFilePath("direitos-eventuais")
-	log.Printf("Fazendo download das verbas (%s)...", deFname)
+	log.Printf("Fazendo download dos direitos eventuais (%s)...", deFname)
 	if err := c.clicaAba(ctx, verbasXPATH); err != nil {
 		status.ExitFromError(err)
 	}
 	if err := c.exportaExcel(ctx, deFname); err != nil {
 		status.ExitFromError(err)
 	}
-	log.Printf("Download das direitos eventuais realizado com sucesso!\n")
-
-	// Planilha de controle
-	ceFname := c.downloadFilePath("controle-de-arquivos")
-	log.Printf("Fazendo download das controle de arquivos (%s)...", ceFname)
-	if err := c.clicaAba(ctx, controleXPATH); err != nil {
-		status.ExitFromError(err)
-	}
-	if err := c.exportaExcel(ctx, ceFname); err != nil {
-		status.ExitFromError(err)
-	}
-	log.Printf("Download do controle de arquivos realizado com sucesso!\n")
+	log.Printf("Download dos direitos eventuais realizado com sucesso!\n")
 
 	// Retorna caminhos completos dos arquivos baixados.
 	return []string{cqFname, dpFname, deFname, iFname, ceFname}, nil
@@ -232,4 +242,32 @@ func verificaErro(err error) {
 		err = status.NewError(status.DeadlineExceeded, err)
 	}
 	status.ExitFromError(err)
+}
+
+func validate(c crawler) error {
+	xlsx := fmt.Sprintf("controle-de-arquivos-%s-%s-%s.xlsx", c.court, c.year, c.month)
+	file, err := excelize.OpenFile(xlsx)
+	if err != nil {
+		return status.NewError(status.SystemError, fmt.Errorf("erro abrindo planilha"))
+	}
+	rows, err := file.GetRows("Sheet1")
+	if err != nil {
+		return status.NewError(status.SystemError, fmt.Errorf("erro lendo planilha"))
+	}
+	filenames := []string{
+		fmt.Sprintf("%s_%s_%s.xls", c.court, c.month, c.year[2:]),
+		fmt.Sprintf("%s_%s_%s.xls", c.court, strings.TrimLeft(c.month, "0"), c.year[2:]),
+	}
+
+	var ok bool
+	for _, row := range rows {
+		f := strings.ToLower(row[2])
+		if strings.Contains(f, filenames[0]) || strings.Contains(f, filenames[1]) {
+			ok = true
+		}
+	}
+	if !ok {
+		return status.NewError(status.DataUnavailable, fmt.Errorf("não há planilhas a serem baixadas"))
+	}
+	return nil
 }
