@@ -245,14 +245,14 @@ func verificaErro(err error) {
 }
 
 func validate(c crawler) error {
-	xlsx := fmt.Sprintf("controle-de-arquivos-%s-%s-%s.xlsx", c.court, c.year, c.month)
+	xlsx := filepath.Join(c.output, fmt.Sprintf("controle-de-arquivos-%s-%s-%s.xlsx", c.court, c.year, c.month))
 	file, err := excelize.OpenFile(xlsx)
 	if err != nil {
-		return status.NewError(status.SystemError, fmt.Errorf("erro abrindo planilha"))
+		return status.NewError(status.InvalidFile, fmt.Errorf("erro abrindo planilha: %w", err))
 	}
 	rows, err := file.GetRows("Sheet1")
 	if err != nil {
-		return status.NewError(status.SystemError, fmt.Errorf("erro lendo planilha"))
+		return status.NewError(status.InvalidFile, fmt.Errorf("erro lendo planilha: %w", err))
 	}
 	filenames := []string{
 		fmt.Sprintf("%s_%s_%s.xls", c.court, c.month, c.year[2:]),
