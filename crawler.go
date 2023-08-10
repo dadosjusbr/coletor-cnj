@@ -22,6 +22,7 @@ const (
 	verbasXPATH           = "/html/body/div[5]/div/div[28]/div[2]/table/tbody/tr/td"
 	controleXPATH         = "/html/body/div[5]/div/div[55]/div[2]/table/tbody/tr/td"
 	contrachequeXPATH     = "/html/body/div[5]/div/div[49]/div[2]/table/tbody/tr/td"
+	botaoMesAnoXPATH      = "/html/body/div[5]/div/div[49]/div[2]/div[1]/div[1]/div[2]/div/div[6]/div[2]/div/div[1]/div"
 )
 
 type crawler struct {
@@ -87,7 +88,12 @@ func (c crawler) crawl() ([]string, error) {
 	// Contracheque
 	cqFname := c.downloadFilePath("contracheque")
 	log.Printf("Fazendo download do contracheque (%s)...", cqFname)
+	// Selecionando contracheque...
 	if err := c.clicaAba(ctx, contrachequeXPATH); err != nil {
+		status.ExitFromError(err)
+	}
+	// Clicando no mês/ano de referência - para ter acesso ao cargo e lotação.
+	if err := c.clicaAba(ctx, botaoMesAnoXPATH); err != nil {
 		status.ExitFromError(err)
 	}
 	if err := c.exportaExcel(ctx, cqFname); err != nil {
