@@ -101,7 +101,7 @@ func (c crawler) crawl() ([]string, error) {
 	}
 
 	// Verificando se os dados estão agregados
-	if err := aggregatedData(cqFname); err != nil {
+	if err := validateSourceFile(cqFname); err != nil {
 		status.ExitFromError(err)
 	}
 
@@ -284,7 +284,8 @@ func validate(c crawler) error {
 	return nil
 }
 
-func aggregatedData(file string) error {
+// Esta função verifica se os dados estão agregados
+func validateSourceFile(file string) error {
 	f, err := excelize.OpenFile(file)
 	if err != nil {
 		return status.NewError(status.InvalidFile, fmt.Errorf("erro abrindo planilha: %w", err))
@@ -293,8 +294,13 @@ func aggregatedData(file string) error {
 	if err != nil {
 		return status.NewError(status.InvalidFile, fmt.Errorf("erro lendo planilha: %w", err))
 	}
+
+	// Quando os dados estão agregados, a planilha de contracheques possui apenas 2 linhas: o cabeçalho e 1 linha com dados agregados.
+	// Além disso, quando os dados estão agregados, o órgão tende a colocar '0' como nome do magistrado.
+	// Aqui verificamos se a planilha possui apenas 1 linha de dados ou se o nome do magistrado é '0'
 	if len(rows) == 2 || rows[1][1] == "0" {
 		return status.NewError(status.DataUnavailable, fmt.Errorf("dados agregados"))
 	}
+
 	return nil
 }
