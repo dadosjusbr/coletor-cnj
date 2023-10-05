@@ -99,6 +99,12 @@ func (c crawler) crawl() ([]string, error) {
 	if err := c.exportaExcel(ctx, cqFname); err != nil {
 		status.ExitFromError(err)
 	}
+
+	// Verificando se os dados estão agregados
+	if err := validateSourceFile(cqFname); err != nil {
+		status.ExitFromError(err)
+	}
+
 	log.Printf("Download realizado com sucesso!\n")
 
 	// Direitos pessoais
@@ -112,7 +118,7 @@ func (c crawler) crawl() ([]string, error) {
 	}
 	log.Printf("Download realizado com sucesso!\n")
 
-	// // Indenizações
+	// Indenizações
 	iFname := c.downloadFilePath("indenizacoes")
 	log.Printf("Fazendo download das indenizações (%s)...", iFname)
 	if err := c.clicaAba(ctx, indenizacoesXPATH); err != nil {
@@ -234,7 +240,7 @@ func nomeiaDownload(output, fName string) error {
 	}
 	// Renomeia o ultimo arquivo modificado.
 	if err := os.Rename(newestFPath, fName); err != nil {
-		return status.NewError(status.DataUnavailable, fmt.Errorf("Sem planilhas baixadas."))
+		return status.NewError(status.DataUnavailable, fmt.Errorf("sem planilhas baixadas"))
 	}
 	return nil
 }
@@ -275,5 +281,26 @@ func validate(c crawler) error {
 	if !ok {
 		return status.NewError(status.DataUnavailable, fmt.Errorf("não há planilhas a serem baixadas"))
 	}
+	return nil
+}
+
+// Esta função verifica se os dados estão agregados
+func validateSourceFile(file string) error {
+	f, err := excelize.OpenFile(file)
+	if err != nil {
+		return status.NewError(status.InvalidFile, fmt.Errorf("erro abrindo planilha: %w", err))
+	}
+	rows, err := f.GetRows("Sheet1")
+	if err != nil {
+		return status.NewError(status.InvalidFile, fmt.Errorf("erro lendo planilha: %w", err))
+	}
+
+	// Quando os dados estão agregados, a planilha de contracheques possui apenas 2 linhas: o cabeçalho e 1 linha com dados agregados.
+	// Além disso, quando os dados estão agregados, o órgão tende a colocar '0' como nome do magistrado.
+	// Aqui verificamos se a planilha possui apenas 1 linha de dados ou se o nome do magistrado é '0'
+	if len(rows) == 2 || rows[1][1] == "0" {
+		return status.NewError(status.DataUnavailable, fmt.Errorf("dados agregados"))
+	}
+
 	return nil
 }
