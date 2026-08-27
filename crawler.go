@@ -46,7 +46,7 @@ func (c crawler) crawl() ([]string, error) {
 	alloc, allocCancel := chromedp.NewExecAllocator(
 		context.Background(),
 		append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", false), // mude para false para executar com navegador visível.
+			chromedp.Flag("headless", true), // mude para false para executar com navegador visível.
 			chromedp.NoSandbox,
 			chromedp.DisableGPU,
 		)...,
