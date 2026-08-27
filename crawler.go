@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 	"github.com/dadosjusbr/status"
@@ -17,12 +18,13 @@ import (
 )
 
 const (
-	direitosPessoaisXPATH = "/html/body/div[5]/div/div[31]/div[2]/table/tbody/tr/td"
-	indenizacoesXPATH     = "/html/body/div[5]/div/div[25]/div[2]/table/tbody/tr/td"
-	verbasXPATH           = "/html/body/div[5]/div/div[28]/div[2]/table/tbody/tr/td"
-	controleXPATH         = "/html/body/div[5]/div/div[55]/div[2]/table/tbody/tr/td"
-	contrachequeXPATH     = "/html/body/div[5]/div/div[49]/div[2]/table/tbody/tr/td"
-	botaoMesAnoXPATH      = "/html/body/div[5]/div/div[49]/div[2]/div[1]/div[1]/div[2]/div/div[6]/div[2]/div/div[1]/div"
+	identificadorControle        = `h2[title="Controle de Arquivos"]`
+	contrachequeTabSelector      = `span.lui-tab__text[title="Contracheque"]`
+	direitosPessoaisTabSelector  = `span.lui-tab__text[title="Direitos Pessoais"]`
+	indenizacoesTabSelector      = `span.lui-tab__text[title="Indenizações"]`
+	direitosEventuaisTabSelector = `span.lui-tab__text[title="Direitos Eventuais"]`
+	botaoRelatoriosXPATH         = `//button[normalize-space(.)='Relatórios']`
+	botaoControleXPATH           = `//button[normalize-space(.)='Controle de envio']`
 )
 
 type crawler struct {
@@ -44,7 +46,7 @@ func (c crawler) crawl() ([]string, error) {
 	alloc, allocCancel := chromedp.NewExecAllocator(
 		context.Background(),
 		append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", true), // mude para false para executar com navegador visível.
+			chromedp.Flag("headless", false), // mude para false para executar com navegador visível.
 			chromedp.NoSandbox,
 			chromedp.DisableGPU,
 		)...,
@@ -72,10 +74,13 @@ func (c crawler) crawl() ([]string, error) {
 	// Planilha de controle
 	ceFname := c.downloadFilePath("controle-de-arquivos")
 	log.Printf("Fazendo download do controle de arquivos (%s)...", ceFname)
-	if err := c.clicaAba(ctx, controleXPATH); err != nil {
+	if err := c.clicaAba(ctx, botaoControleXPATH); err != nil {
 		status.ExitFromError(err)
 	}
-	if err := c.exportaExcel(ctx, ceFname); err != nil {
+	if err := c.clicaAba(ctx, identificadorControle); err != nil {
+		status.ExitFromError(err)
+	}
+	if err := c.exportaExcel(ctx, identificadorControle, ceFname); err != nil {
 		status.ExitFromError(err)
 	}
 	log.Printf("Download do controle de arquivos realizado com sucesso!\n")
@@ -88,15 +93,14 @@ func (c crawler) crawl() ([]string, error) {
 	// Contracheque
 	cqFname := c.downloadFilePath("contracheque")
 	log.Printf("Fazendo download do contracheque (%s)...", cqFname)
+	if err := c.clicaAba(ctx, botaoRelatoriosXPATH); err != nil {
+		status.ExitFromError(err)
+	}
 	// Selecionando contracheque...
-	if err := c.clicaAba(ctx, contrachequeXPATH); err != nil {
+	if err := c.clicaAba(ctx, contrachequeTabSelector); err != nil {
 		status.ExitFromError(err)
 	}
-	// Clicando no mês/ano de referência - para ter acesso ao cargo e lotação.
-	if err := c.clicaAba(ctx, botaoMesAnoXPATH); err != nil {
-		status.ExitFromError(err)
-	}
-	if err := c.exportaExcel(ctx, cqFname); err != nil {
+	if err := c.exportaExcel(ctx, contrachequeTabSelector, cqFname); err != nil {
 		status.ExitFromError(err)
 	}
 
@@ -110,10 +114,10 @@ func (c crawler) crawl() ([]string, error) {
 	// Direitos pessoais
 	dpFname := c.downloadFilePath("direitos-pessoais")
 	log.Printf("Fazendo download dos direitos pessoais (%s)...", dpFname)
-	if err := c.clicaAba(ctx, direitosPessoaisXPATH); err != nil {
+	if err := c.clicaAba(ctx, direitosPessoaisTabSelector); err != nil {
 		status.ExitFromError(err)
 	}
-	if err := c.exportaExcel(ctx, dpFname); err != nil {
+	if err := c.exportaExcel(ctx, direitosPessoaisTabSelector, dpFname); err != nil {
 		status.ExitFromError(err)
 	}
 	log.Printf("Download realizado com sucesso!\n")
@@ -121,10 +125,10 @@ func (c crawler) crawl() ([]string, error) {
 	// Indenizações
 	iFname := c.downloadFilePath("indenizacoes")
 	log.Printf("Fazendo download das indenizações (%s)...", iFname)
-	if err := c.clicaAba(ctx, indenizacoesXPATH); err != nil {
+	if err := c.clicaAba(ctx, indenizacoesTabSelector); err != nil {
 		status.ExitFromError(err)
 	}
-	if err := c.exportaExcel(ctx, iFname); err != nil {
+	if err := c.exportaExcel(ctx, indenizacoesTabSelector, iFname); err != nil {
 		status.ExitFromError(err)
 	}
 	log.Printf("Download realizado com sucesso!\n")
@@ -132,10 +136,10 @@ func (c crawler) crawl() ([]string, error) {
 	// Verbas
 	deFname := c.downloadFilePath("direitos-eventuais")
 	log.Printf("Fazendo download dos direitos eventuais (%s)...", deFname)
-	if err := c.clicaAba(ctx, verbasXPATH); err != nil {
+	if err := c.clicaAba(ctx, direitosEventuaisTabSelector); err != nil {
 		status.ExitFromError(err)
 	}
-	if err := c.exportaExcel(ctx, deFname); err != nil {
+	if err := c.exportaExcel(ctx, direitosEventuaisTabSelector, deFname); err != nil {
 		status.ExitFromError(err)
 	}
 	log.Printf("Download dos direitos eventuais realizado com sucesso!\n")
@@ -150,33 +154,63 @@ func (c crawler) downloadFilePath(prefix string) string {
 
 func (c crawler) selectionaOrgaoMesAno(ctx context.Context) error {
 	const (
-		pathRoot = "/html/body/div[2]/input"
-		baseURL  = "https://paineis.cnj.jus.br/QvAJAXZfc/opendoc.htm?document=qvw_l%2FPainelCNJ.qvw&host=QVS%40neodimio03&anonymous=true&sheet=shPORT63Relatorios"
+		// Seletor do orgão (tribunal).
+		tribunalSelector = `h6[aria-label="Tribunal"]`
+
+		// Seletor do ano e campo de pesquisa.
+		anoSelector = `h6[aria-label="Ano"]`
+
+		// Seletor do mes e campo de pesquisa.
+		mesSelector = `h6[aria-label="Mês Referência"]`
+
+		// Seletor do campo de pesquisa (orgão, mês e ano).
+		//searchInputSelector = `/html/body/div[6]/div[3]/div/div/div[2]/div[1]/div/input`
+		searchInputSelector = `input[data-testid="search-input-field"][placeholder="Pesquisar na caixa de listagem"]`
+
+		// Seletor do botão que confirma o filtro escolhido.
+		confirmSelectionSelector = `button[data-testid="actions-toolbar-confirm"][title="Confirmar seleção"]`
+
+		baseURL = "https://paineisanalytics.cnj.jus.br/single/?appid=8ccb93ca-848f-4ffe-bf9b-96d57878c4d7&sheet=a710d8e5-fddb-4fa7-9098-4dbca30a391a&lang=pt-BR&theme=Mix_Theme&opt=ctxmenu,currsel"
 	)
 	return chromedp.Run(ctx,
 		chromedp.Navigate(baseURL),
-		chromedp.WaitVisible(`//*[@title='Tribunal']`, chromedp.BySearch),
+		chromedp.WaitVisible(tribunalSelector, chromedp.ByQuery),
 		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Seleciona o orgão
-		chromedp.Click(`//*[@title='Tribunal']//*[@title='Pesquisar']`, chromedp.BySearch, chromedp.NodeReady),
-		chromedp.WaitVisible(pathRoot),
-		chromedp.SetValue(pathRoot, c.court),
-		chromedp.SendKeys(pathRoot, kb.Enter, chromedp.NodeSelected),
+		chromedp.Click(tribunalSelector, chromedp.ByQuery),
+		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
+		chromedp.Click(searchInputSelector, chromedp.ByQuery),
+		chromedp.SendKeys(searchInputSelector, c.court, chromedp.ByQuery),
+		chromedp.Sleep(time.Second),
+		chromedp.SendKeys(searchInputSelector, kb.Enter, chromedp.ByQuery),
+		chromedp.Sleep(time.Second),
+		chromedp.WaitVisible(confirmSelectionSelector, chromedp.ByQuery),
+		chromedp.Click(confirmSelectionSelector, chromedp.ByQuery),
 		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Seleciona o ano
-		chromedp.Click(`//*[@title='Ano']//*[@title='Pesquisar']`, chromedp.BySearch, chromedp.NodeVisible),
-		chromedp.WaitVisible(pathRoot),
-		chromedp.SetValue(pathRoot, c.year),
-		chromedp.SendKeys(pathRoot, kb.Enter),
+		chromedp.Click(anoSelector, chromedp.ByQuery),
+		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
+		chromedp.Click(searchInputSelector, chromedp.ByQuery),
+		chromedp.SendKeys(searchInputSelector, c.year, chromedp.ByQuery),
+		chromedp.Sleep(time.Second),
+		chromedp.SendKeys(searchInputSelector, kb.Enter, chromedp.ByQuery),
+		chromedp.Sleep(time.Second),
+		chromedp.WaitVisible(confirmSelectionSelector, chromedp.ByQuery),
+		chromedp.Click(confirmSelectionSelector, chromedp.ByQuery),
 		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Seleciona o mes
-		chromedp.Click(`//*[@title='Mês Referencia']//*[@title='Pesquisar']`, chromedp.BySearch, chromedp.NodeVisible),
-		chromedp.WaitVisible(pathRoot),
-		chromedp.SetValue(pathRoot, c.month),
-		chromedp.SendKeys(pathRoot, kb.Enter),
+		chromedp.Click(mesSelector, chromedp.ByQuery),
+		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
+		chromedp.Click(searchInputSelector, chromedp.ByQuery),
+		chromedp.SendKeys(searchInputSelector, c.month, chromedp.ByQuery),
+		chromedp.Sleep(time.Second),
+		chromedp.SendKeys(searchInputSelector, kb.Enter, chromedp.ByQuery),
+		chromedp.Sleep(time.Second),
+		chromedp.WaitVisible(confirmSelectionSelector, chromedp.ByQuery),
+		chromedp.Click(confirmSelectionSelector, chromedp.ByQuery),
 		chromedp.Sleep(c.timeBetweenSteps),
 
 		// Altera o diretório de download
@@ -186,24 +220,50 @@ func (c crawler) selectionaOrgaoMesAno(ctx context.Context) error {
 	)
 }
 
-// exportaExcel clica no botão correto para exportar para excel, espera um tempo para download renomeia o arquivo.
-func (c crawler) exportaExcel(ctx context.Context, fName string) error {
+// exportaExcel abre o menu da visualização indicada, confirma a exportação,
+// baixa, fecha o modal e renomeia o arquivo.
+func (c crawler) exportaExcel(ctx context.Context, reportSelector, fName string) error {
+	const (
+		exportarDadosSelector = `//*[normalize-space(text())='Exportar dados']`
+		exportDialogSelector  = `[role="dialog"]`
+		exportButtonSelector  = `button[tid="table-export"][name="confirm"]`
+		downloadLinkSelector  = `a.export-url[q-translation="Export.CompletedLink"][href*="/tempcontent/"]`
+		closeButtonSelector   = `button[q-translation="Common.Close"][ng-click="close()"]`
+	)
+
+	var nodes []*cdp.Node
 	err := chromedp.Run(ctx,
-		chromedp.Click(`//*[@title='Enviar para Excel']`, chromedp.BySearch, chromedp.NodeVisible),
+		chromedp.Nodes(reportSelector, &nodes, chromedp.BySearch, chromedp.AtLeast(1)),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return chromedp.MouseClickNode(nodes[0], chromedp.ButtonRight).Do(ctx)
+		}),
+		chromedp.WaitVisible(exportarDadosSelector, chromedp.BySearch),
+		chromedp.Click(exportarDadosSelector, chromedp.BySearch, chromedp.NodeVisible),
+		chromedp.WaitVisible(exportDialogSelector, chromedp.ByQuery),
+		chromedp.Sleep(c.timeBetweenSteps),
+		chromedp.WaitVisible(exportButtonSelector, chromedp.ByQuery),
+		chromedp.Click(exportButtonSelector, chromedp.ByQuery),
+		chromedp.Sleep(c.timeBetweenSteps),
+		chromedp.WaitVisible(downloadLinkSelector, chromedp.ByQuery),
+		chromedp.Click(downloadLinkSelector, chromedp.ByQuery),
+		chromedp.Sleep(c.timeBetweenSteps),
+		chromedp.WaitVisible(closeButtonSelector, chromedp.ByQuery),
+		chromedp.Click(closeButtonSelector, chromedp.ByQuery),
 		chromedp.Sleep(c.timeBetweenSteps),
 	)
 	if err != nil {
-		return status.NewError(status.ConnectionError, fmt.Errorf("erro clicando no botão de download: %v", err))
+		return status.NewError(status.ConnectionError, fmt.Errorf("erro exportando planilha: %v", err))
 	}
 
 	time.Sleep(c.downloadTimeout)
 
 	if err := nomeiaDownload(c.output, fName); err != nil {
-		status.ExitFromError(err)
+		return err
 	}
 	if _, err := os.Stat(fName); os.IsNotExist(err) {
 		return status.NewError(status.DataUnavailable, fmt.Errorf("download do arquivo de %s não realizado", fName))
 	}
+
 	return nil
 }
 
