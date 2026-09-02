@@ -13,7 +13,7 @@ Exemplo para coletar o TJAP em maio de 2025:
 $env:COURT = "TJAP"
 $env:YEAR = "2025"
 $env:MONTH = "05"
-$env:TIME_BETWEEN_STEPS = "7s"
+$env:TIME_BETWEEN_STEPS = "10s"
 $env:OUTPUT_FOLDER = Join-Path $PWD "output"
 
 go run .
@@ -27,6 +27,7 @@ $env:YEAR = "2025"
 $env:MONTH = "05"
 $env:TIME_BETWEEN_STEPS = "7s"
 $env:OUTPUT_FOLDER = Join-Path $PWD ("output-amapa-NOVO" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+$env:GENERAL_TIMEOUT = "15m"
 
 go run .
 ```

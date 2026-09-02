@@ -12,7 +12,6 @@ import (
 	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
-	"github.com/chromedp/chromedp/kb"
 	"github.com/dadosjusbr/status"
 	"github.com/xuri/excelize/v2"
 )
@@ -163,60 +162,57 @@ func (c crawler) selectionaOrgaoMesAno(ctx context.Context) error {
 		// Seletor do mes e campo de pesquisa.
 		mesSelector = `h6[aria-label="Mês Referência"]`
 
-		// Seletor do campo de pesquisa (orgão, mês e ano).
-		//searchInputSelector = `/html/body/div[6]/div[3]/div/div/div[2]/div[1]/div/input`
-		searchInputSelector = `input[data-testid="search-input-field"][placeholder="Pesquisar na caixa de listagem"]`
-
-		// Seletor do botão que confirma o filtro escolhido.
-		confirmSelectionSelector = `button[data-testid="actions-toolbar-confirm"][title="Confirmar seleção"]`
-
 		baseURL = "https://paineisanalytics.cnj.jus.br/single/?appid=8ccb93ca-848f-4ffe-bf9b-96d57878c4d7&sheet=a710d8e5-fddb-4fa7-9098-4dbca30a391a&lang=pt-BR&theme=Mix_Theme&opt=ctxmenu,currsel"
 	)
-	return chromedp.Run(ctx,
+	if err := chromedp.Run(ctx,
 		chromedp.Navigate(baseURL),
 		chromedp.WaitVisible(tribunalSelector, chromedp.ByQuery),
 		chromedp.Sleep(c.timeBetweenSteps),
+	); err != nil {
+		return err
+	}
 
-		// Seleciona o orgão
-		chromedp.Click(tribunalSelector, chromedp.ByQuery),
-		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
-		chromedp.Click(searchInputSelector, chromedp.ByQuery),
-		chromedp.SendKeys(searchInputSelector, c.court, chromedp.ByQuery),
-		chromedp.Sleep(time.Second),
-		chromedp.SendKeys(searchInputSelector, kb.Enter, chromedp.ByQuery),
-		chromedp.Sleep(time.Second),
-		chromedp.WaitVisible(confirmSelectionSelector, chromedp.ByQuery),
-		chromedp.Click(confirmSelectionSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
+	if err := c.selecionaFiltro(ctx, tribunalSelector, c.court); err != nil {
+		return err
+	}
+	if err := c.selecionaFiltro(ctx, anoSelector, c.year); err != nil {
+		return err
+	}
+	if err := c.selecionaFiltro(ctx, mesSelector, c.month); err != nil {
+		return err
+	}
 
-		// Seleciona o ano
-		chromedp.Click(anoSelector, chromedp.ByQuery),
-		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
-		chromedp.Click(searchInputSelector, chromedp.ByQuery),
-		chromedp.SendKeys(searchInputSelector, c.year, chromedp.ByQuery),
-		chromedp.Sleep(time.Second),
-		chromedp.SendKeys(searchInputSelector, kb.Enter, chromedp.ByQuery),
-		chromedp.Sleep(time.Second),
-		chromedp.WaitVisible(confirmSelectionSelector, chromedp.ByQuery),
-		chromedp.Click(confirmSelectionSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
-
-		// Seleciona o mes
-		chromedp.Click(mesSelector, chromedp.ByQuery),
-		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
-		chromedp.Click(searchInputSelector, chromedp.ByQuery),
-		chromedp.SendKeys(searchInputSelector, c.month, chromedp.ByQuery),
-		chromedp.Sleep(time.Second),
-		chromedp.SendKeys(searchInputSelector, kb.Enter, chromedp.ByQuery),
-		chromedp.Sleep(time.Second),
-		chromedp.WaitVisible(confirmSelectionSelector, chromedp.ByQuery),
-		chromedp.Click(confirmSelectionSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
-
+	return chromedp.Run(ctx,
 		// Altera o diretório de download
 		browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllowAndName).
 			WithDownloadPath(c.output).
 			WithEventsEnabled(true),
+	)
+}
+
+func (c crawler) selecionaFiltro(ctx context.Context, headerSelector, value string) error {
+	const (
+		searchInputSelector = `input[data-testid="search-input-field"][placeholder="Pesquisar na caixa de listagem"]`
+		confirmSelector     = `button[data-testid="actions-toolbar-confirm"][title="Confirmar seleção"]`
+	)
+	// Localiza, na caixa de listagem aberta, o item cujo título corresponde ao valor pesquisado para selecioná-lo antes da confirmação.
+	resultSelector := fmt.Sprintf(
+		`//*[contains(@class, "listbox-popover")]//*[@data-testid="listbox.item"][.//*[@title=%q]]`,
+		strings.ToUpper(strings.TrimSpace(value)),
+	)
+
+	return chromedp.Run(ctx,
+		chromedp.Click(headerSelector, chromedp.ByQuery),
+		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
+		chromedp.Click(searchInputSelector, chromedp.ByQuery),
+		chromedp.SendKeys(searchInputSelector, value, chromedp.ByQuery),
+		chromedp.Sleep(c.timeBetweenSteps),
+		chromedp.WaitVisible(resultSelector, chromedp.BySearch),
+		chromedp.Click(resultSelector, chromedp.BySearch, chromedp.NodeVisible),
+		chromedp.Sleep(c.timeBetweenSteps),
+		chromedp.WaitVisible(confirmSelector, chromedp.ByQuery),
+		chromedp.Click(confirmSelector, chromedp.ByQuery),
+		chromedp.Sleep(c.timeBetweenSteps),
 	)
 }
 
