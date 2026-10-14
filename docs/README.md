@@ -32,6 +32,19 @@ $env:GENERAL_TIMEOUT = "15m"
 go run .
 ```
 
+## Tamanho da janela e viewport
+
+O novo painel do CNJ depende da largura disponível para concluir a renderização. Em uma janela estreita ou no tamanho padrão do Chrome em modo headless, o painel pode permanecer na tela de carregamento e os filtros `Tribunal`, `Ano` e `Mês Referência` não são inseridos no DOM. Nesse caso, o coletor aguarda pelo seletor até atingir o tempo limite.
+
+Para tornar a execução independente de uma janela visível ou maximizada, o coletor usa duas configurações de `1920 x 1080`:
+
+```go
+chromedp.WindowSize(1920, 1080)
+chromedp.EmulateViewport(1920, 1080)
+```
+
+`WindowSize` define o tamanho inicial da janela do Chrome. `EmulateViewport` garante que a página enxergue uma área útil com essas dimensões antes da navegação. Assim, o coletor pode executar com `headless=true` sem depender do tamanho da janela do ambiente.
+
 ## Seletores do painel novo
 
 Os Full XPaths e seletores do painel antigo foram substituídos por atributos do HTML do painel novo:

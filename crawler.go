@@ -46,6 +46,7 @@ func (c crawler) crawl() ([]string, error) {
 		context.Background(),
 		append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.Flag("headless", true), // mude para false para executar com navegador visível.
+			chromedp.WindowSize(1920, 1080),
 			chromedp.NoSandbox,
 			chromedp.DisableGPU,
 		)...,
@@ -165,6 +166,7 @@ func (c crawler) selectionaOrgaoMesAno(ctx context.Context) error {
 		baseURL = "https://paineisanalytics.cnj.jus.br/single/?appid=8ccb93ca-848f-4ffe-bf9b-96d57878c4d7&sheet=a710d8e5-fddb-4fa7-9098-4dbca30a391a&lang=pt-BR&theme=Mix_Theme&opt=ctxmenu,currsel"
 	)
 	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(1920, 1080),
 		chromedp.Navigate(baseURL),
 		chromedp.WaitVisible(tribunalSelector, chromedp.ByQuery),
 		chromedp.Sleep(c.timeBetweenSteps),
