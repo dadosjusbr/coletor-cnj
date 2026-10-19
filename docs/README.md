@@ -5,7 +5,11 @@ O coletor está sendo adaptado do painel antigo para o painel novo do CNJ:
 - Painel antigo: <https://paineis.cnj.jus.br/QvAJAXZfc/opendoc.htm?document=qvw_l%2FPainelCNJ.qvw&host=QVS%40neodimio03&anonymous=true&sheet=shPORT63Relatorios>
 - Painel novo: <https://paineisanalytics.cnj.jus.br/single/?appid=8ccb93ca-848f-4ffe-bf9b-96d57878c4d7&sheet=a710d8e5-fddb-4fa7-9098-4dbca30a391a&lang=pt-BR&theme=Mix_Theme&opt=ctxmenu,currsel>
 
+A garantia dos filtros, a validação de cargo/lotação e o levantamento mensal do Actions estão em [Filtros e orçamento](consumo-actions-2026.md). As esperas agora dependem do estado do painel; `TIME_BETWEEN_STEPS` continua aceito por compatibilidade, sem impor pausas fixas.
+
 ## Execução local
+
+Para automatizar o teste dos 93 órgãos em contêineres Linux, consulte [Teste local com Docker Desktop](teste-local-docker.md). O script registra planilhas, logs, códigos de saída e tempo por tentativa.
 
 Exemplo para coletar o TJAP em maio de 2025:
 
@@ -79,18 +83,17 @@ func (c crawler) exportaExcel(ctx context.Context, reportSelector, fName string)
 | Link do arquivo | `a.export-url[q-translation="Export.CompletedLink"][href*="/tempcontent/"]` |
 | Botão Fechar | `button[q-translation="Common.Close"][ng-click="close()"]` |
 
-O fluxo faz o clique direito na visualização, abre **Exportar dados**, confirma a exportação, clica no link gerado, fecha o modal e chama `nomeiaDownload` com o mesmo nome de destino usado anteriormente.
+O fluxo confere os filtros e aguarda a tabela ativa mostrar o recorte solicitado. Depois faz o clique direito nessa tabela, abre **Exportar dados**, confirma a exportação, baixa pelo link gerado e fecha o modal. O evento de conclusão do Chrome identifica o arquivo pelo GUID, que é renomeado para o mesmo destino usado anteriormente. Todos os registros do XLSX são conferidos antes de seguir para o próximo relatório.
 
 Exemplo para o controle de arquivos:
 
 ```go
-c.clicaAba(ctx, controleXPATH)
-c.exportaExcel(ctx, controleXPATH, ceFname)
+c.clicaAba(ctx, botaoControleXPATH)
+c.clicaAba(ctx, identificadorControle)
+c.exportaExcel(ctx, identificadorControle, ceFname)
 ```
 
-O seletor passado a `exportaExcel` deve representar a visualização que recebe o clique direito, não apenas sua aba.
-
- `contrachequeTabSelector` já identifica a aba **Contracheque**
+O seletor passado a `exportaExcel` identifica o título do controle ou a aba do relatório. A função localiza a tabela correspondente à aba ativa para abrir seu menu de contexto.
 
 ## Comparação das planilhas dos painéis antigo e novo
 

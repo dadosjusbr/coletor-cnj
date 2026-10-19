@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 )
 
 const (
+	baseURL                      = "https://paineisanalytics.cnj.jus.br/single/?appid=8ccb93ca-848f-4ffe-bf9b-96d57878c4d7&sheet=a710d8e5-fddb-4fa7-9098-4dbca30a391a&lang=pt-BR&theme=Mix_Theme&opt=ctxmenu,currsel"
 	identificadorControle        = `h2[title="Controle de Arquivos"]`
 	contrachequeTabSelector      = `span.lui-tab__text[title="Contracheque"]`
 	direitosPessoaisTabSelector  = `span.lui-tab__text[title="Direitos Pessoais"]`
@@ -62,11 +64,13 @@ func (c crawler) crawl() ([]string, error) {
 	ctx, cancel = context.WithTimeout(ctx, c.collectionTimeout)
 	defer cancel()
 
-	log.Printf("Realizando seleção (%s/%s/%s)...", c.court, c.month, c.year)
-	if err := c.selectionaOrgaoMesAno(ctx); err != nil {
-		verificaErro(err)
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(1920, 1080),
+		chromedp.Navigate(baseURL),
+		c.configuraDownloads(),
+	); err != nil {
+		return nil, verificaErro(err)
 	}
-	log.Printf("Seleção realizada com sucesso!\n")
 
 	// NOTA IMPORTANTE: os prefixos dos nomes dos arquivos tem que ser igual
 	// ao esperado no parser CNJ.
@@ -75,38 +79,38 @@ func (c crawler) crawl() ([]string, error) {
 	ceFname := c.downloadFilePath("controle-de-arquivos")
 	log.Printf("Fazendo download do controle de arquivos (%s)...", ceFname)
 	if err := c.clicaAba(ctx, botaoControleXPATH); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	if err := c.clicaAba(ctx, identificadorControle); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	if err := c.exportaExcel(ctx, identificadorControle, ceFname); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	log.Printf("Download do controle de arquivos realizado com sucesso!\n")
 
 	// Verificando se tem dados
 	if err := validate(c); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 
 	// Contracheque
 	cqFname := c.downloadFilePath("contracheque")
 	log.Printf("Fazendo download do contracheque (%s)...", cqFname)
 	if err := c.clicaAba(ctx, botaoRelatoriosXPATH); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	// Selecionando contracheque...
 	if err := c.clicaAba(ctx, contrachequeTabSelector); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	if err := c.exportaExcel(ctx, contrachequeTabSelector, cqFname); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 
 	// Verificando se os dados estão agregados
 	if err := validateSourceFile(cqFname); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 
 	log.Printf("Download realizado com sucesso!\n")
@@ -115,10 +119,10 @@ func (c crawler) crawl() ([]string, error) {
 	dpFname := c.downloadFilePath("direitos-pessoais")
 	log.Printf("Fazendo download dos direitos pessoais (%s)...", dpFname)
 	if err := c.clicaAba(ctx, direitosPessoaisTabSelector); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	if err := c.exportaExcel(ctx, direitosPessoaisTabSelector, dpFname); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	log.Printf("Download realizado com sucesso!\n")
 
@@ -126,10 +130,10 @@ func (c crawler) crawl() ([]string, error) {
 	iFname := c.downloadFilePath("indenizacoes")
 	log.Printf("Fazendo download das indenizações (%s)...", iFname)
 	if err := c.clicaAba(ctx, indenizacoesTabSelector); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	if err := c.exportaExcel(ctx, indenizacoesTabSelector, iFname); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	log.Printf("Download realizado com sucesso!\n")
 
@@ -137,10 +141,10 @@ func (c crawler) crawl() ([]string, error) {
 	deFname := c.downloadFilePath("direitos-eventuais")
 	log.Printf("Fazendo download dos direitos eventuais (%s)...", deFname)
 	if err := c.clicaAba(ctx, direitosEventuaisTabSelector); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	if err := c.exportaExcel(ctx, direitosEventuaisTabSelector, deFname); err != nil {
-		status.ExitFromError(err)
+		return nil, err
 	}
 	log.Printf("Download dos direitos eventuais realizado com sucesso!\n")
 
@@ -152,44 +156,81 @@ func (c crawler) downloadFilePath(prefix string) string {
 	return filepath.Join(c.output, fmt.Sprintf("%s-%s-%s-%s.xlsx", prefix, c.court, c.year, c.month))
 }
 
-func (c crawler) selectionaOrgaoMesAno(ctx context.Context) error {
-	const (
-		// Seletor do orgão (tribunal).
-		tribunalSelector = `h6[aria-label="Tribunal"]`
+type filtro struct {
+	campo, seletor, valor string
+}
 
-		// Seletor do ano e campo de pesquisa.
-		anoSelector = `h6[aria-label="Ano"]`
+func (c crawler) filtros(reportSelector string) []filtro {
+	// As folhas usam campos distintos para a referência de envio e do contracheque.
+	referencia := "P63_CC_REFERENCIA_"
+	if reportSelector == identificadorControle {
+		referencia = "P63_CE_REFERENCIA_"
+	}
+	return []filtro{
+		{"P63_CE_TRIBUNAL", `h6[aria-label="Tribunal"]`, strings.ToUpper(c.court)},
+		{referencia + "ANO", `h6[aria-label="Ano"]`, c.year},
+		{referencia + "MES", `h6[aria-label="Mês Referência"]`, c.month},
+	}
+}
 
-		// Seletor do mes e campo de pesquisa.
-		mesSelector = `h6[aria-label="Mês Referência"]`
+// Confere o valor efetivamente confirmado, não apenas o texto digitado na busca.
+const filtroAplicadoJS = `(campo, valor) => {
+	const item = document.querySelector('#selection-list [data-csid="' + campo + '"] [tid="current-selection-item-text"]');
+	return !!item && item.textContent.trim() === valor;
+}`
 
-		baseURL = "https://paineisanalytics.cnj.jus.br/single/?appid=8ccb93ca-848f-4ffe-bf9b-96d57878c4d7&sheet=a710d8e5-fddb-4fa7-9098-4dbca30a391a&lang=pt-BR&theme=Mix_Theme&opt=ctxmenu,currsel"
-	)
-	if err := chromedp.Run(ctx,
-		chromedp.EmulateViewport(1920, 1080),
-		chromedp.Navigate(baseURL),
-		chromedp.WaitVisible(tribunalSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
-	); err != nil {
+func filtroAplicado(ctx context.Context, f filtro) (bool, error) {
+	var aplicado bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`(%s)(%q, %q)`, filtroAplicadoJS, f.campo, f.valor), &aplicado))
+	return aplicado, err
+}
+
+// A navegação pode limpar as seleções. Reaplica somente campos ausentes ou divergentes;
+// clicar novamente em um valor já selecionado no Qlik o desmarca.
+func (c crawler) garanteFiltros(ctx context.Context, reportSelector string) error {
+	if err := chromedp.Run(ctx, chromedp.WaitVisible(reportSelector, chromedp.ByQuery)); err != nil {
 		return err
 	}
-
-	if err := c.selecionaFiltro(ctx, tribunalSelector, c.court); err != nil {
-		return err
+	for _, f := range c.filtros(reportSelector) {
+		if err := chromedp.Run(ctx, chromedp.WaitVisible(f.seletor, chromedp.ByQuery)); err != nil {
+			return err
+		}
+		aplicado, err := filtroAplicado(ctx, f)
+		if err != nil {
+			return err
+		}
+		if aplicado {
+			continue
+		}
+		// Uma seleção anterior diferente deve ser substituída, não somada à nova.
+		item := fmt.Sprintf(`#selection-list [data-csid=%q]`, f.campo)
+		var existentes []*cdp.Node
+		if err := chromedp.Run(ctx, chromedp.Nodes(item+` .remove`, &existentes, chromedp.ByQueryAll, chromedp.AtLeast(0))); err != nil {
+			return err
+		}
+		if len(existentes) > 0 {
+			if err := chromedp.Run(ctx, chromedp.Click(item+` .remove`, chromedp.ByQuery), chromedp.WaitNotPresent(item, chromedp.ByQuery)); err != nil {
+				return err
+			}
+		}
+		log.Printf("Aplicando filtro %s=%s", f.campo, f.valor)
+		if err := c.selecionaFiltro(ctx, f.seletor, f.valor); err != nil {
+			return fmt.Errorf("erro selecionando %s=%s: %w", f.campo, f.valor, err)
+		}
+		if err := chromedp.Run(ctx, chromedp.PollFunction(filtroAplicadoJS, nil, chromedp.WithPollingArgs(f.campo, f.valor))); err != nil {
+			return fmt.Errorf("filtro %s=%s não confirmado: %w", f.campo, f.valor, err)
+		}
 	}
-	if err := c.selecionaFiltro(ctx, anoSelector, c.year); err != nil {
-		return err
+	for _, f := range c.filtros(reportSelector) {
+		aplicado, err := filtroAplicado(ctx, f)
+		if err != nil {
+			return err
+		}
+		if !aplicado {
+			return fmt.Errorf("filtro %s=%s perdido após seleção", f.campo, f.valor)
+		}
 	}
-	if err := c.selecionaFiltro(ctx, mesSelector, c.month); err != nil {
-		return err
-	}
-
-	return chromedp.Run(ctx,
-		// Altera o diretório de download
-		browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllowAndName).
-			WithDownloadPath(c.output).
-			WithEventsEnabled(true),
-	)
+	return nil
 }
 
 func (c crawler) selecionaFiltro(ctx context.Context, headerSelector, value string) error {
@@ -208,18 +249,15 @@ func (c crawler) selecionaFiltro(ctx context.Context, headerSelector, value stri
 		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
 		chromedp.Click(searchInputSelector, chromedp.ByQuery),
 		chromedp.SendKeys(searchInputSelector, value, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
 		chromedp.WaitVisible(resultSelector, chromedp.BySearch),
 		chromedp.Click(resultSelector, chromedp.BySearch, chromedp.NodeVisible),
-		chromedp.Sleep(c.timeBetweenSteps),
 		chromedp.WaitVisible(confirmSelector, chromedp.ByQuery),
 		chromedp.Click(confirmSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
+		chromedp.WaitNotPresent(searchInputSelector, chromedp.ByQuery),
 	)
 }
 
-// exportaExcel abre o menu da visualização indicada, confirma a exportação,
-// baixa, fecha o modal e renomeia o arquivo.
+// exportaExcel abre o menu da visualização indicada, confirma a exportação, baixa, fecha o modal e renomeia o arquivo.
 func (c crawler) exportaExcel(ctx context.Context, reportSelector, fName string) error {
 	const (
 		exportarDadosSelector = `//*[normalize-space(text())='Exportar dados']`
@@ -228,82 +266,167 @@ func (c crawler) exportaExcel(ctx context.Context, reportSelector, fName string)
 		downloadLinkSelector  = `a.export-url[q-translation="Export.CompletedLink"][href*="/tempcontent/"]`
 		closeButtonSelector   = `button[q-translation="Common.Close"][ng-click="close()"]`
 	)
+	if err := c.garanteFiltros(ctx, reportSelector); err != nil {
+		return status.NewError(status.ConnectionError, fmt.Errorf("erro garantindo filtros: %w", err))
+	}
+	if err := c.garanteAba(ctx, reportSelector); err != nil {
+		return status.NewError(status.ConnectionError, fmt.Errorf("erro selecionando relatório após os filtros: %w", err))
+	}
+	// A barra de seleções pode atualizar antes da tabela. Aguarda os dados do recorte,
+	// sem um Sleep fixo que exportaria resultados antigos em um painel mais lento.
+	var tabelaSelector string
+	if err := chromedp.Run(ctx, chromedp.PollFunction(`(seletor, tribunal, referencia, controle) => {
+		const titulo = document.querySelector(seletor);
+		const objeto = titulo && titulo.closest('article.qv-object');
+		if (!objeto) return false;
+		const aba = titulo.closest('[role="tab"]');
+		if (aba && aba.getAttribute('aria-selected') !== 'true') return false;
+		const tabela = aba ? objeto.querySelector('article.qv-object-' + CSS.escape(aba.getAttribute('aria-controls'))) : objeto;
+		if (!tabela) return false;
+		const linhas = Array.from(tabela.querySelectorAll('tbody tr.qv-st-data-row')).filter(l => l.getClientRects().length);
+		const pronto = linhas.length > 0 && linhas.every(linha => {
+			const celulas = linha.querySelectorAll('td .qv-st-value');
+			return celulas.length > 2 && celulas[0].getAttribute('title') === tribunal &&
+				celulas[controle ? 1 : 2].getAttribute('title') === referencia;
+		});
+		const classe = Array.from(tabela.classList).find(c => c.startsWith('qv-object-') && c !== 'qv-object-table');
+		return pronto && classe ? 'article.' + CSS.escape(classe) : false;
+	}`, &tabelaSelector, chromedp.WithPollingArgs(reportSelector, strings.ToUpper(c.court), c.month+"/"+c.year, reportSelector == identificadorControle))); err != nil {
+		return status.NewError(status.ConnectionError, fmt.Errorf("tabela não atualizou para o recorte solicitado: %w", err))
+	}
 
 	var nodes []*cdp.Node
 	err := chromedp.Run(ctx,
-		chromedp.Nodes(reportSelector, &nodes, chromedp.BySearch, chromedp.AtLeast(1)),
+		chromedp.Nodes(tabelaSelector, &nodes, chromedp.ByQuery, chromedp.AtLeast(1)),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			return chromedp.MouseClickNode(nodes[0], chromedp.ButtonRight).Do(ctx)
 		}),
 		chromedp.WaitVisible(exportarDadosSelector, chromedp.BySearch),
 		chromedp.Click(exportarDadosSelector, chromedp.BySearch, chromedp.NodeVisible),
 		chromedp.WaitVisible(exportDialogSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
 		chromedp.WaitVisible(exportButtonSelector, chromedp.ByQuery),
 		chromedp.Click(exportButtonSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
 		chromedp.WaitVisible(downloadLinkSelector, chromedp.ByQuery),
-		chromedp.Click(downloadLinkSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
-		chromedp.WaitVisible(closeButtonSelector, chromedp.ByQuery),
-		chromedp.Click(closeButtonSelector, chromedp.ByQuery),
-		chromedp.Sleep(c.timeBetweenSteps),
 	)
 	if err != nil {
 		return status.NewError(status.ConnectionError, fmt.Errorf("erro exportando planilha: %v", err))
 	}
 
-	time.Sleep(c.downloadTimeout)
-
-	if err := nomeiaDownload(c.output, fName); err != nil {
+	if err := c.baixaPlanilha(ctx, downloadLinkSelector, fName); err != nil {
 		return err
 	}
-	if _, err := os.Stat(fName); os.IsNotExist(err) {
-		return status.NewError(status.DataUnavailable, fmt.Errorf("download do arquivo de %s não realizado", fName))
+	if err := chromedp.Run(ctx,
+		chromedp.Click(closeButtonSelector, chromedp.ByQuery),
+		chromedp.WaitNotPresent(exportButtonSelector, chromedp.ByQuery),
+	); err != nil {
+		return status.NewError(status.ConnectionError, fmt.Errorf("erro fechando exportação: %w", err))
 	}
-
-	return nil
+	return c.validaRecorte(fName)
 }
 
-// clicaAba clica na aba referenciada pelo XPATH passado como parâmetro.
-// Também espera até o título Tribunal estar visível.
-func (c crawler) clicaAba(ctx context.Context, xpath string) error {
-	return chromedp.Run(ctx,
-		chromedp.Click(xpath),
-		chromedp.Sleep(c.timeBetweenSteps),
-	)
+func (c crawler) clicaAba(ctx context.Context, seletor string) error {
+	return chromedp.Run(ctx, chromedp.Click(seletor, chromedp.NodeVisible))
 }
 
-// nomeiaDownload dá um nome ao último arquivo modificado dentro do diretório
-// passado como parâmetro nomeiaDownload dá pega um arquivo
-func nomeiaDownload(output, fName string) error {
-	// Identifica qual foi o ultimo arquivo
-	files, err := os.ReadDir(output)
+// Alterar os filtros pode fazer o contêiner voltar à primeira aba.
+func (c crawler) garanteAba(ctx context.Context, seletor string) error {
+	if seletor == identificadorControle {
+		return nil
+	}
+	var ativa bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`document.querySelector(%q)?.closest('[role="tab"]')?.getAttribute('aria-selected') === 'true'`, seletor), &ativa)); err != nil {
+		return err
+	}
+	if ativa {
+		return nil
+	}
+	return c.clicaAba(ctx, seletor)
+}
+
+func (c crawler) configuraDownloads() chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		// O link do Qlik abre outra aba. Configura e escuta o navegador inteiro.
+		return browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllowAndName).
+			WithDownloadPath(c.output).WithEventsEnabled(true).
+			Do(cdp.WithExecutor(ctx, chromedp.FromContext(ctx).Browser))
+	})
+}
+
+// DOWNLOAD_TIMEOUT limita a transferência, em vez de impor uma pausa a cada arquivo.
+// AllowAndName grava o GUID: nunca renomeamos um arquivo anterior como se fosse novo.
+func (c crawler) baixaPlanilha(ctx context.Context, link, destino string) error {
+	downloadCtx, cancel := context.WithTimeout(ctx, c.downloadTimeout)
+	defer cancel()
+	concluido := make(chan *browser.EventDownloadProgress, 1)
+	var guid string
+	chromedp.ListenBrowser(downloadCtx, func(event interface{}) {
+		switch e := event.(type) {
+		case *browser.EventDownloadWillBegin:
+			guid = e.GUID
+		case *browser.EventDownloadProgress:
+			if e.GUID == guid && (e.State == browser.DownloadProgressStateCompleted || e.State == browser.DownloadProgressStateCanceled) {
+				select {
+				case concluido <- e:
+				default:
+				}
+			}
+		}
+	})
+	if err := chromedp.Run(downloadCtx, chromedp.Click(link, chromedp.ByQuery)); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.NewError(status.DeadlineExceeded, fmt.Errorf("tempo esgotado iniciando download: %w", err))
+		}
+		return status.NewError(status.ConnectionError, fmt.Errorf("erro iniciando download: %w", err))
+	}
+	select {
+	case e := <-concluido:
+		if e.State == browser.DownloadProgressStateCanceled {
+			return status.NewError(status.ConnectionError, fmt.Errorf("download %s cancelado", e.GUID))
+		}
+		if err := os.Rename(filepath.Join(c.output, e.GUID), destino); err != nil {
+			return status.NewError(status.SystemError, fmt.Errorf("erro renomeando download %s: %w", e.GUID, err))
+		}
+		return nil
+	case <-downloadCtx.Done():
+		return status.NewError(status.DeadlineExceeded, fmt.Errorf("download de %s não concluído: %w", destino, downloadCtx.Err()))
+	}
+}
+
+// A verificação no XLSX também rejeita uma tabela ainda desatualizada após a seleção.
+func (c crawler) validaRecorte(path string) error {
+	f, err := excelize.OpenFile(path)
 	if err != nil {
-		return status.NewError(status.SystemError, fmt.Errorf("erro lendo diretório %s: %v", output, err))
+		return status.NewError(status.InvalidFile, fmt.Errorf("erro abrindo planilha: %w", err))
 	}
-	var newestFPath string
-	var newestTime int64 = 0
-	for _, f := range files {
-		fPath := filepath.Join(output, f.Name())
-		fi, err := os.Stat(fPath)
-		if err != nil {
-			return status.NewError(status.SystemError, fmt.Errorf("erro obtendo informações sobre arquivo %s: %v", fPath, err))
-		}
-		currTime := fi.ModTime().Unix()
-		if currTime > newestTime {
-			newestTime = currTime
-			newestFPath = fPath
+	defer f.Close()
+	rows, err := f.GetRows("Sheet1")
+	if err != nil {
+		return status.NewError(status.InvalidFile, fmt.Errorf("erro lendo planilha: %w", err))
+	}
+	if len(rows) < 2 {
+		return status.NewError(status.DataUnavailable, fmt.Errorf("planilha %s sem registros", path))
+	}
+	tribunal, referencia := -1, -1
+	for i, header := range rows[0] {
+		switch header {
+		case "Tribunal":
+			tribunal = i
+		case "Mês/Ano", "Mês/Ano Ref.":
+			referencia = i
 		}
 	}
-	// Renomeia o ultimo arquivo modificado.
-	if err := os.Rename(newestFPath, fName); err != nil {
-		return status.NewError(status.DataUnavailable, fmt.Errorf("sem planilhas baixadas"))
+	if tribunal < 0 || referencia < 0 {
+		return status.NewError(status.InvalidFile, fmt.Errorf("planilha %s sem colunas de tribunal/referência", path))
+	}
+	for i, row := range rows[1:] {
+		if tribunal >= len(row) || referencia >= len(row) || !strings.EqualFold(row[tribunal], c.court) || row[referencia] != c.month+"/"+c.year {
+			return status.NewError(status.InvalidFile, fmt.Errorf("planilha %s contém linha %d fora de %s/%s/%s", path, i+2, c.court, c.month, c.year))
+		}
 	}
 	return nil
 }
 
-func verificaErro(err error) {
+func verificaErro(err error) error {
 	// Verificamos se o erro é de conexão ou 'context deadline exceeded',
 	// caso contrário, será retornado status Unknown (6)
 	if strings.Contains(err.Error(), "ERR_CONNECTION_CLOSED") || strings.Contains(err.Error(), "ERR_CONNECTION_RESET") {
@@ -311,7 +434,7 @@ func verificaErro(err error) {
 	} else if strings.Contains(err.Error(), "context deadline exceeded") {
 		err = status.NewError(status.DeadlineExceeded, err)
 	}
-	status.ExitFromError(err)
+	return err
 }
 
 func validate(c crawler) error {
@@ -320,6 +443,7 @@ func validate(c crawler) error {
 	if err != nil {
 		return status.NewError(status.InvalidFile, fmt.Errorf("erro abrindo planilha: %w", err))
 	}
+	defer file.Close()
 	rows, err := file.GetRows("Sheet1")
 	if err != nil {
 		return status.NewError(status.InvalidFile, fmt.Errorf("erro lendo planilha: %w", err))
@@ -331,6 +455,9 @@ func validate(c crawler) error {
 
 	var ok bool
 	for _, row := range rows {
+		if len(row) < 3 {
+			continue
+		}
 		f := strings.ToLower(row[2])
 		if strings.Contains(f, filenames[0]) || strings.Contains(f, filenames[1]) {
 			ok = true
@@ -348,6 +475,7 @@ func validateSourceFile(file string) error {
 	if err != nil {
 		return status.NewError(status.InvalidFile, fmt.Errorf("erro abrindo planilha: %w", err))
 	}
+	defer f.Close()
 	rows, err := f.GetRows("Sheet1")
 	if err != nil {
 		return status.NewError(status.InvalidFile, fmt.Errorf("erro lendo planilha: %w", err))
@@ -356,8 +484,17 @@ func validateSourceFile(file string) error {
 	// Quando os dados estão agregados, a planilha de contracheques possui apenas 2 linhas: o cabeçalho e 1 linha com dados agregados.
 	// Além disso, quando os dados estão agregados, o órgão tende a colocar '0' como nome do magistrado.
 	// Aqui verificamos se a planilha possui apenas 1 linha de dados ou se o nome do magistrado é '0'
-	if len(rows) == 2 || rows[1][1] == "0" {
+	if len(rows) <= 2 || (len(rows[1]) > 1 && rows[1][1] == "0") {
 		return status.NewError(status.DataUnavailable, fmt.Errorf("dados agregados"))
+	}
+	for _, coluna := range []string{"Cargo", "Lotação"} {
+		presente := false
+		for _, header := range rows[0] {
+			presente = presente || header == coluna
+		}
+		if !presente {
+			return status.NewError(status.InvalidFile, fmt.Errorf("contracheque sem coluna %s", coluna))
+		}
 	}
 
 	return nil
