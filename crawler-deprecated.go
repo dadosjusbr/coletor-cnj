@@ -1,3 +1,6 @@
+//go:build ignore
+// +build ignore
+
 // Código do coletor do Painel CNJ Antigo - Descontinuado. Mantido apenas para referência histórica.
 // Data Operação 22/10
 
