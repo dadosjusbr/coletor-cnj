@@ -3,3 +3,9 @@
 output
 coletor-cnj
 coletor-cnj-cdp
+
+# ignora arquivo com a versão antiga do crawler e excalidraw
+comparacao-coletores-2026-09.excalidraw
+
+# Claude
+CLAUDE.md
