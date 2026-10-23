@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto"
 	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 	"github.com/dadosjusbr/status"
 	"github.com/xuri/excelize/v2"
 )
@@ -214,8 +216,8 @@ func (c crawler) garanteFiltros(ctx context.Context, reportSelector string) erro
 			}
 		}
 		log.Printf("Aplicando filtro %s=%s", f.campo, f.valor)
-		if err := c.selecionaFiltro(ctx, f.seletor, f.valor); err != nil {
-			return fmt.Errorf("erro selecionando %s=%s: %w", f.campo, f.valor, err)
+		if err := c.aplicaFiltro(ctx, f); err != nil {
+			return err
 		}
 		if err := chromedp.Run(ctx, chromedp.PollFunction(filtroAplicadoJS, nil, chromedp.WithPollingArgs(f.campo, f.valor))); err != nil {
 			return fmt.Errorf("filtro %s=%s não confirmado: %w", f.campo, f.valor, err)
@@ -233,11 +235,46 @@ func (c crawler) garanteFiltros(ctx context.Context, reportSelector string) erro
 	return nil
 }
 
+const (
+	searchInputSelector = `input[data-testid="search-input-field"][placeholder="Pesquisar na caixa de listagem"]`
+	tentativasFiltro    = 3
+	pausaFiltro         = 2 * time.Second
+)
+
+// O Qlik recria os elementos do painel enquanto recalcula uma seleção. Se isso ocorre entre a
+// localização do nó e o clique do chromedp, o CDP responde "Could not find node with given id".
+func (c crawler) aplicaFiltro(ctx context.Context, f filtro) error {
+	for tentativa := 1; ; tentativa++ {
+		err := c.selecionaFiltro(ctx, f.seletor, f.valor)
+		if err == nil {
+			return nil
+		}
+		var cdpErr *cdproto.Error
+		if !errors.As(err, &cdpErr) || cdpErr.Message != "Could not find node with given id" || tentativa == tentativasFiltro {
+			return fmt.Errorf("erro selecionando %s=%s: %w", f.campo, f.valor, err)
+		}
+		log.Printf("Painel recriado ao selecionar %s=%s (tentativa %d/%d): %v", f.campo, f.valor, tentativa, tentativasFiltro, err)
+		// Esc fecha a caixa de listagem descartando a seleção pendente.
+		if err := chromedp.Run(ctx,
+			chromedp.KeyEvent(kb.Escape),
+			chromedp.WaitNotPresent(searchInputSelector, chromedp.ByQuery),
+			chromedp.Sleep(pausaFiltro),
+		); err != nil {
+			return fmt.Errorf("erro cancelando seleção de %s=%s: %w", f.campo, f.valor, err)
+		}
+		// Se a confirmação chegou a ocorrer, um novo clique desmarcaria o valor.
+		aplicado, err := filtroAplicado(ctx, f)
+		if err != nil {
+			return err
+		}
+		if aplicado {
+			return nil
+		}
+	}
+}
+
 func (c crawler) selecionaFiltro(ctx context.Context, headerSelector, value string) error {
-	const (
-		searchInputSelector = `input[data-testid="search-input-field"][placeholder="Pesquisar na caixa de listagem"]`
-		confirmSelector     = `button[data-testid="actions-toolbar-confirm"][title="Confirmar seleção"]`
-	)
+	const confirmSelector = `button[data-testid="actions-toolbar-confirm"][title="Confirmar seleção"]`
 	// Localiza, na caixa de listagem aberta, o item cujo título corresponde ao valor pesquisado para selecioná-lo antes da confirmação.
 	resultSelector := fmt.Sprintf(
 		`//*[contains(@class, "listbox-popover")]//*[@data-testid="listbox.item"][.//*[@title=%q]]`,
