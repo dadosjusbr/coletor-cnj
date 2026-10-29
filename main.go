@@ -15,9 +15,9 @@ type confSpec struct {
 }
 
 const (
-	defaultFileDownloadTimeout = 20 * time.Second // Duração que o coletor deve esperar até que o download de cada um dos arquivos seja concluído
+	defaultFileDownloadTimeout = 20 * time.Second // Tempo máximo de transferência de cada arquivo
 	defaultGeneralTimeout      = 6 * time.Minute  // Duração máxima total da coleta de todos os arquivos. Valor padrão calculado a partir de uma média de execuções ~4.5min
-	defaulTimeBetweenSteps     = 30 * time.Second //Tempo de espera entre passos do coletor."
+	defaulTimeBetweenSteps     = 30 * time.Second // Compatibilidade com o executor; esperas agora dependem do estado do painel
 )
 
 func main() {
@@ -82,7 +82,7 @@ func main() {
 	}
 	downloads, err := c.crawl()
 	if err != nil {
-		status.ExitFromError(status.NewError(status.OutputError, fmt.Errorf("Error crawling (%s, %s, %s, %s): %w", court, year, month, outputFolder, err)))
+		status.ExitFromError(fmt.Errorf("Error crawling (%s, %s, %s, %s): %w", court, year, month, outputFolder, err))
 	}
 
 	// O parser do CNJ espera os arquivos separados por \n. Mudanças aqui tem
