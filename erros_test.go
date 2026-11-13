@@ -97,3 +97,21 @@ func TestClicaAbaFalhaRapido(t *testing.T) {
 		t.Fatalf("aba encerrada após o prazo da etapa: %v", err)
 	}
 }
+
+func TestPollingRespeitaTimeout(t *testing.T) {
+	ctx := navegadorTeste(t, time.Minute)
+	paginaTeste(t, ctx, `<p>filtro que nunca confirma</p>`)
+	c := crawler{pollTimeout: time.Second}
+	inicio := time.Now()
+	err := c.aguarda(ctx, "filtro P63_CE_TRIBUNAL", `(campo) => false`, nil, "P63_CE_TRIBUNAL")
+	if err == nil {
+		t.Fatal("espera sem confirmação terminou sem erro")
+	}
+	if d := time.Since(inicio); d > 5*time.Second {
+		t.Fatalf("levou %s", d)
+	}
+	var pronto bool
+	if err := c.aguarda(ctx, "página carregada", `() => document.readyState === 'complete'`, &pronto); err != nil || !pronto {
+		t.Fatalf("espera que confirma falhou: %v, %v", pronto, err)
+	}
+}

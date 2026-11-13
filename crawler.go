@@ -35,6 +35,7 @@ type crawler struct {
 	collectionTimeout time.Duration
 	timeBetweenSteps  time.Duration
 	stepTimeout       time.Duration // Tempo máximo de cada etapa no painel (clique, seleção de filtro)
+	pollTimeout       time.Duration // Tempo máximo de espera pela confirmação de filtro e pela tabela atualizada
 	court             string
 	year              string
 	month             string
@@ -224,7 +225,7 @@ func (c crawler) garanteFiltros(ctx context.Context, reportSelector string) erro
 		if err := c.aplicaFiltro(ctx, f); err != nil {
 			return err
 		}
-		if err := chromedp.Run(ctx, chromedp.PollFunction(filtroAplicadoJS, nil, chromedp.WithPollingArgs(f.campo, f.valor))); err != nil {
+		if err := c.aguarda(ctx, "filtro "+f.campo, filtroAplicadoJS, nil, f.campo, f.valor); err != nil {
 			return fmt.Errorf("filtro %s=%s não confirmado: %w", f.campo, f.valor, err)
 		}
 	}
@@ -317,7 +318,7 @@ func (c crawler) exportaExcel(ctx context.Context, reportSelector, fName string)
 	// A barra de seleções pode atualizar antes da tabela. Aguarda os dados do recorte,
 	// sem um Sleep fixo que exportaria resultados antigos em um painel mais lento.
 	var tabelaSelector string
-	if err := chromedp.Run(ctx, chromedp.PollFunction(`(seletor, tribunal, referencia, controle) => {
+	if err := c.aguarda(ctx, "tabela de "+reportSelector, `(seletor, tribunal, referencia, controle) => {
 		const titulo = document.querySelector(seletor);
 		const objeto = titulo && titulo.closest('article.qv-object');
 		if (!objeto) return false;
@@ -333,7 +334,7 @@ func (c crawler) exportaExcel(ctx context.Context, reportSelector, fName string)
 		});
 		const classe = Array.from(tabela.classList).find(c => c.startsWith('qv-object-') && c !== 'qv-object-table');
 		return pronto && classe ? 'article.' + CSS.escape(classe) : false;
-	}`, &tabelaSelector, chromedp.WithPollingArgs(reportSelector, strings.ToUpper(c.court), c.month+"/"+c.year, reportSelector == identificadorControle))); err != nil {
+	}`, &tabelaSelector, reportSelector, strings.ToUpper(c.court), c.month+"/"+c.year, reportSelector == identificadorControle); err != nil {
 		return status.NewError(status.ConnectionError, fmt.Errorf("tabela não atualizou para o recorte solicitado: %w", err))
 	}
 
@@ -482,6 +483,19 @@ func (c crawler) validaRecorte(path string) error {
 		}
 	}
 	return nil
+}
+
+// aguarda espera a função JS devolver um valor verdadeiro, com prazo pollTimeout, e registra
+// quanto esperou, para calibrar o prazo com os tempos reais do painel.
+func (c crawler) aguarda(ctx context.Context, nome, js string, res interface{}, args ...interface{}) error {
+	limite := c.pollTimeout
+	if limite <= 0 {
+		limite = defaultPollTimeout
+	}
+	inicio := time.Now()
+	err := chromedp.Run(ctx, chromedp.PollFunction(js, res, chromedp.WithPollingTimeout(limite), chromedp.WithPollingArgs(args...)))
+	log.Printf("espera %s levou %.1fs", nome, time.Since(inicio).Seconds())
+	return err
 }
 
 // Erros de rede do Chrome que valem nova tentativa.
