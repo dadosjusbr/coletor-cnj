@@ -76,7 +76,7 @@ func (c crawler) crawl() ([]string, error) {
 		return nil, verificaErro(err)
 	}
 	// Um painel que não termina de carregar falha aqui, em vez de consumir o GENERAL_TIMEOUT.
-	if err := c.etapa(ctx, "abertura do painel", chromedp.WaitVisible(botaoControleXPATH, chromedp.BySearch)); err != nil {
+	if err := c.etapaComPrazo(ctx, "abertura do painel", c.prazoAbertura(), chromedp.WaitVisible(botaoControleXPATH, chromedp.BySearch)); err != nil {
 		return nil, err
 	}
 
@@ -375,10 +375,23 @@ func (c crawler) clicaAba(ctx context.Context, seletor string) error {
 // GENERAL_TIMEOUT inteiro, e o erro sai classificado (3 ou 9), o que permite nova tentativa.
 // O prazo vale só para estas ações: a aba do navegador continua aberta para as etapas seguintes.
 func (c crawler) etapa(ctx context.Context, nome string, acoes ...chromedp.Action) error {
-	limite := c.stepTimeout
-	if limite <= 0 {
-		limite = defaultStepTimeout
+	return c.etapaComPrazo(ctx, nome, c.prazoEtapa(), acoes...)
+}
+
+func (c crawler) prazoEtapa() time.Duration {
+	if c.stepTimeout <= 0 {
+		return defaultStepTimeout
 	}
+	return c.stepTimeout
+}
+
+// A carga inicial do painel varia muito: de 3 a 6 s na maioria das coletas, mas 57,4 s numa
+// coleta válida do TJAP. Por isso ela tem o dobro do prazo das outras etapas.
+func (c crawler) prazoAbertura() time.Duration {
+	return 2 * c.prazoEtapa()
+}
+
+func (c crawler) etapaComPrazo(ctx context.Context, nome string, limite time.Duration, acoes ...chromedp.Action) error {
 	etapaCtx, cancel := context.WithTimeout(ctx, limite)
 	defer cancel()
 	inicio := time.Now()

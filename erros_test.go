@@ -115,3 +115,13 @@ func TestPollingRespeitaTimeout(t *testing.T) {
 		t.Fatalf("espera que confirma falhou: %v, %v", pronto, err)
 	}
 }
+
+func TestPrazoDaAberturaDoPainel(t *testing.T) {
+	// A abertura levou 57,4 s numa coleta válida (TJAP 05/2025, 13/11/2026); as outras etapas, até 17 s.
+	if p := (crawler{}).prazoAbertura(); p != 2*defaultStepTimeout {
+		t.Fatalf("padrão = %s", p)
+	}
+	if p := (crawler{stepTimeout: 45 * time.Second}).prazoAbertura(); p != 90*time.Second {
+		t.Fatalf("com STEP_TIMEOUT=45s = %s", p)
+	}
+}
