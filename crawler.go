@@ -34,6 +34,7 @@ type crawler struct {
 	downloadTimeout   time.Duration
 	collectionTimeout time.Duration
 	timeBetweenSteps  time.Duration
+	stepTimeout       time.Duration // Tempo máximo de cada etapa no painel (clique, seleção de filtro)
 	court             string
 	year              string
 	month             string
@@ -72,6 +73,10 @@ func (c crawler) crawl() ([]string, error) {
 		c.configuraDownloads(),
 	); err != nil {
 		return nil, verificaErro(err)
+	}
+	// Um painel que não termina de carregar falha aqui, em vez de consumir o GENERAL_TIMEOUT.
+	if err := c.etapa(ctx, "abertura do painel", chromedp.WaitVisible(botaoControleXPATH, chromedp.BySearch)); err != nil {
+		return nil, err
 	}
 
 	// NOTA IMPORTANTE: os prefixos dos nomes dos arquivos tem que ser igual
@@ -281,7 +286,7 @@ func (c crawler) selecionaFiltro(ctx context.Context, headerSelector, value stri
 		strings.ToUpper(strings.TrimSpace(value)),
 	)
 
-	return chromedp.Run(ctx,
+	return c.etapa(ctx, "seleção de "+value,
 		chromedp.Click(headerSelector, chromedp.ByQuery),
 		chromedp.WaitVisible(searchInputSelector, chromedp.ByQuery),
 		chromedp.Click(searchInputSelector, chromedp.ByQuery),
@@ -362,7 +367,23 @@ func (c crawler) exportaExcel(ctx context.Context, reportSelector, fName string)
 }
 
 func (c crawler) clicaAba(ctx context.Context, seletor string) error {
-	return chromedp.Run(ctx, chromedp.Click(seletor, chromedp.NodeVisible))
+	return c.etapa(ctx, "clique em "+seletor, chromedp.Click(seletor, chromedp.NodeVisible))
+}
+
+// etapa roda as ações com prazo próprio. Um painel travado falha em stepTimeout, e não no
+// GENERAL_TIMEOUT inteiro, e o erro sai classificado (3 ou 9), o que permite nova tentativa.
+// O prazo vale só para estas ações: a aba do navegador continua aberta para as etapas seguintes.
+func (c crawler) etapa(ctx context.Context, nome string, acoes ...chromedp.Action) error {
+	limite := c.stepTimeout
+	if limite <= 0 {
+		limite = defaultStepTimeout
+	}
+	etapaCtx, cancel := context.WithTimeout(ctx, limite)
+	defer cancel()
+	inicio := time.Now()
+	err := chromedp.Run(etapaCtx, acoes...)
+	log.Printf("etapa %s levou %.1fs", nome, time.Since(inicio).Seconds())
+	return verificaErro(err)
 }
 
 // Alterar os filtros pode fazer o contêiner voltar à primeira aba.
@@ -463,13 +484,36 @@ func (c crawler) validaRecorte(path string) error {
 	return nil
 }
 
+// Erros de rede do Chrome que valem nova tentativa.
+var errosDeConexao = []string{
+	"ERR_CONNECTION_CLOSED",
+	"ERR_CONNECTION_RESET",
+	"ERR_CONNECTION_TIMED_OUT",
+	"ERR_NAME_NOT_RESOLVED",
+	"ERR_INTERNET_DISCONNECTED",
+	"ERR_TIMED_OUT",
+}
+
+// verificaErro classifica erros de conexão (3) e de prazo esgotado (9), que o executor
+// repete. Um *status.Error já classificado volta inalterado. Os demais voltam como estão e
+// saem como Unknown (6); eles não são embrulhados para que errors.As continue achando o
+// erro do CDP (ver aplicaFiltro), já que status.Error não implementa Unwrap.
 func verificaErro(err error) error {
-	// Verificamos se o erro é de conexão ou 'context deadline exceeded',
-	// caso contrário, será retornado status Unknown (6)
-	if strings.Contains(err.Error(), "ERR_CONNECTION_CLOSED") || strings.Contains(err.Error(), "ERR_CONNECTION_RESET") {
-		err = status.NewError(status.ConnectionError, err)
-	} else if strings.Contains(err.Error(), "context deadline exceeded") {
-		err = status.NewError(status.DeadlineExceeded, err)
+	if err == nil {
+		return nil
+	}
+	var se *status.Error
+	if errors.As(err, &se) {
+		return err
+	}
+	msg := err.Error()
+	for _, codigo := range errosDeConexao {
+		if strings.Contains(msg, codigo) {
+			return status.NewError(status.ConnectionError, err)
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(msg, "context deadline exceeded") {
+		return status.NewError(status.DeadlineExceeded, err)
 	}
 	return err
 }

@@ -18,6 +18,7 @@ const (
 	defaultFileDownloadTimeout = 20 * time.Second // Tempo máximo de transferência de cada arquivo
 	defaultGeneralTimeout      = 6 * time.Minute  // Duração máxima total da coleta de todos os arquivos. Valor padrão calculado a partir de uma média de execuções ~4.5min
 	defaulTimeBetweenSteps     = 30 * time.Second // Compatibilidade com o executor; esperas agora dependem do estado do painel
+	defaultStepTimeout         = 60 * time.Second // Tempo máximo de cada etapa no painel; um travamento falha aqui e não no GENERAL_TIMEOUT
 )
 
 func main() {
@@ -71,10 +72,19 @@ func main() {
 			status.ExitFromError(status.NewError(status.InvalidInput, fmt.Errorf("Invalid TIME_BETWEEN_STEPS (\"%s\"): %w", os.Getenv("TIME_BETWEEN_STEPS"), err)))
 		}
 	}
+	stepTimeout := defaultStepTimeout
+	if os.Getenv("STEP_TIMEOUT") != "" {
+		var err error
+		stepTimeout, err = time.ParseDuration(os.Getenv("STEP_TIMEOUT"))
+		if err != nil {
+			status.ExitFromError(status.NewError(status.InvalidInput, fmt.Errorf("Invalid STEP_TIMEOUT (\"%s\"): %w", os.Getenv("STEP_TIMEOUT"), err)))
+		}
+	}
 	c := crawler{
 		downloadTimeout:   downloadTimeout,
 		collectionTimeout: generalTimeout,
 		timeBetweenSteps:  timeBetweenSteps,
+		stepTimeout:       stepTimeout,
 		court:             court,
 		year:              year,
 		month:             month,
